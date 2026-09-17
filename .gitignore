@@ -1,0 +1,7 @@
+.build/
+.build-cache/
+dist/
+Vendor/whisper.cpp/
+.DS_Store
+*.wav
+.swiftpm/
