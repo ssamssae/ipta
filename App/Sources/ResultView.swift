@@ -84,7 +84,7 @@ struct ResultView: View {
         if state.micStatus != "허용" {
             guidance(
                 title: "마이크 허용",
-                body: "처음이면 말결이 마이크를 쓰는지 물어봅니다. 허용해야 받아 적을 수 있습니다.",
+                body: "처음이면 입타가 마이크를 쓰는지 물어봅니다. 허용해야 받아 적을 수 있습니다.",
                 action: "마이크 설정 열기",
                 run: state.openMicSettings
             )
@@ -276,7 +276,7 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    Text("이 맥 로그인은 이미 켜 둔 클로드·코덱스·커서·그록을 그대로 씁니다. 말결이 토큰을 꺼내 저장하지 않습니다. 내 키를 고르면 열쇠고리에만 넣습니다. 함대 공용 키는 안 씁니다.")
+                    Text("이 맥 로그인은 이미 켜 둔 클로드·코덱스·커서·그록을 그대로 씁니다. 입타가 토큰을 꺼내 저장하지 않습니다. 내 키를 고르면 열쇠고리에만 넣습니다. 함대 공용 키는 안 씁니다.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

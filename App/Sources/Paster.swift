@@ -82,10 +82,10 @@ final class Paster {
             return "암호 입력 중이라 자동으로 넣지 않았습니다. \(Paster.keptNote)"
         }
         if expected.isMalgyeol {
-            return "말결 창에는 자동으로 넣지 않습니다. \(Paster.keptNote)"
+            return "입타 창에는 자동으로 넣지 않습니다. \(Paster.keptNote)"
         }
         if !Paster.isTrusted() {
-            return "손쉬운 사용이 꺼져 있어 다른 앱에 넣지 못했습니다. 설정에서 말결을 허용하거나 복사를 쓰세요."
+            return "손쉬운 사용이 꺼져 있어 다른 앱에 넣지 못했습니다. 설정에서 입타를 허용하거나 복사를 쓰세요."
         }
 
         activateTarget(expected)
@@ -94,7 +94,7 @@ final class Paster {
             return "암호 칸이라 자동으로 넣지 않았습니다. \(Paster.keptNote)"
         }
         if current.isMalgyeol {
-            return "지금은 말결이 앞창입니다. \(Paster.keptNote)"
+            return "지금은 입타가 앞창입니다. \(Paster.keptNote)"
         }
 
         if expected.isEditableTextInput, current.isEditableTextInput, TargetLock.matches(expected, current) {

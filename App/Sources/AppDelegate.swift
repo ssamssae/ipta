@@ -100,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
-        let open = NSMenuItem(title: "말결 창 열기", action: #selector(showPanel), keyEquivalent: "")
+        let open = NSMenuItem(title: "입타 창 열기", action: #selector(showPanel), keyEquivalent: "")
         let rec = NSMenuItem(
             title: "시작/정지 (\(state.toggleKey.label()))",
             action: #selector(toggle),

@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 enum MalgyeolInfo {
-    static let productKo = "말결"
-    static let productEn = "Malgyeol"
-    static let label = "말결"
+    static let productKo = "입타"
+    static let productEn = "Ipta"
+    static let label = "입타"
     static let bundleId = "app.malgyeol.Malgyeol"
     static let maxSeconds: Double = 60
     static let modelName = "ggml-small.bin"

@@ -225,7 +225,7 @@ final class AppState: ObservableObject {
                         self.actuallyRecord(job: job)
                     } else {
                         self.phase = .error
-                        self.lastError = "마이크가 거부되었습니다. 시스템 설정에서 말결을 허용하세요."
+                        self.lastError = "마이크가 거부되었습니다. 시스템 설정에서 입타를 허용하세요."
                         self.statusLine = "마이크 거부"
                     }
                 }

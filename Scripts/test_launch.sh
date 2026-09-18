@@ -10,14 +10,14 @@ if [[ ! -d "$APP" ]]; then
   echo "app missing: $APP" >&2
   exit 1
 fi
-cp -R "$APP" "$TESTDIR/말결.app"
-echo "copied to $TESTDIR/말결.app"
+cp -R "$APP" "$TESTDIR/입타.app"
+echo "copied to $TESTDIR/입타.app"
 # Launch without activating worker terminals; LSUIElement app
-open "$TESTDIR/말결.app"
+open "$TESTDIR/입타.app"
 sleep 2
-if pgrep -lf '말결.app/Contents/MacOS/Malgyeol|Malgyeol.app/Contents/MacOS/Malgyeol' >/dev/null; then
+if pgrep -lf '입타.app/Contents/MacOS/Malgyeol|Malgyeol.app/Contents/MacOS/Malgyeol' >/dev/null; then
   echo "LAUNCH_OK"
-  pgrep -lf 'Malgyeol|말결.app'
+  pgrep -lf 'Malgyeol|입타.app'
 else
   echo "LAUNCH_FAIL" >&2
   exit 2

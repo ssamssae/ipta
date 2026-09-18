@@ -25,7 +25,11 @@ struct LockedTarget {
     static let editableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox"]
 
     var isMalgyeol: Bool {
-        bundleId == MalgyeolInfo.bundleId || appName == MalgyeolInfo.productKo || appName == MalgyeolInfo.productEn
+        bundleId == MalgyeolInfo.bundleId
+            || appName == MalgyeolInfo.productKo
+            || appName == MalgyeolInfo.productEn
+            || appName == "말결"
+            || appName == "Malgyeol"
     }
 
     /// We actually know what we are looking at.
@@ -43,7 +47,7 @@ struct LockedTarget {
 
     /// Human-readable reason auto-paste is refused, or nil if allowed.
     var refusalReason: String? {
-        if isMalgyeol { return "말결 창" }
+        if isMalgyeol { return "입타 창" }
         if !axTrusted { return "손쉬운 사용 꺼짐" }
         if pid == 0 { return "앞 앱 없음" }
         if windowNumber == 0 { return "창을 확인하지 못함" }

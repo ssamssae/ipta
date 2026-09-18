@@ -12,7 +12,7 @@ for info in list {
     let blob = (owner + " " + name).lowercased()
     let matches: Bool
     if want.isEmpty {
-        matches = blob.contains("malgyeol") || blob.contains("말결") || owner.contains("SecurityAgent") || name.contains("마이크")
+        matches = blob.contains("malgyeol") || blob.contains("말결") || blob.contains("ipta") || blob.contains("입타") || owner.contains("SecurityAgent") || name.contains("마이크")
     } else {
         matches = want.contains { blob.contains($0.lowercased()) }
     }
