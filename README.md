@@ -27,7 +27,7 @@ bash Scripts/check_rpath.sh dist/Malgyeol.app
 bash Scripts/package_dmg.sh
 ```
 
-지금은 빌드 산출 파일 이름이 아직 `Malgyeol.app`입니다. 화면에 보이는 이름은 입타로 바꾸는 중입니다.
+지금 앱 파일과 화면 글자는 아직 말결입니다. 공개 이름은 입타입니다.
 
 ## 라이선스
 앱 소스 MIT. 엔진 whisper.cpp MIT. 모델은 OpenAI Whisper 가중치(MIT)의 ggml 변환본입니다. `THIRD_PARTY_NOTICES.md`.
