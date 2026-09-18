@@ -4,9 +4,9 @@
 
 **지원:** macOS 14 이상, Apple Silicon (arm64). Intel Mac은 아직 없습니다.
 
-**받기:** 다른 사람이 바로 설치할 파일은 아직 없습니다. 나중에 이 창고의 [Releases](https://github.com/ssamssae/ipta/releases)에 올립니다. 지금은 소스만 공개합니다.
+**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.2-arm64.dmg`를 받습니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
 
-**서명:** 아직 애플 공증이 아닙니다. 공증 전에 받은 앱은 다른 맥에서 막힐 수 있습니다.
+**서명:** Minus Beta Studio 개발자 서명과 애플 공증이 되어 있습니다. Apple Silicon 맥 전용입니다.
 
 ## 쓰는 법
 1. 입타를 응용 프로그램 폴더로 복사하거나 DMG에서 실행합니다.
