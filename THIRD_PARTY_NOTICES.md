@@ -1,4 +1,4 @@
-# Third-party notices — 말결 (Malgyeol)
+# Third-party notices — 입타 (Ipta)
 
 이 앱은 음성을 업로드하지 않습니다.
 
