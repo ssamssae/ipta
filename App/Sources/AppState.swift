@@ -62,6 +62,11 @@ final class AppState: ObservableObject {
     private var hashChecked = false
     var onHotKeyChange: (() -> Void)?
     var onMicButtonChange: (() -> Void)?
+    var onHidePanel: (() -> Void)?
+
+    func hidePanel() {
+        onHidePanel?()
+    }
     var onMicCaptureChange: ((Bool) -> Void)?
     private var micCaptureToken = 0
     private var oauthWatch: Task<Void, Never>?

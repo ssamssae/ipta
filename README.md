@@ -4,7 +4,7 @@
 
 **지원:** macOS 14 이상. Apple Silicon과 Intel Mac 모두. 받는 파일 하나(`Ipta-*-macos.dmg`)면 됩니다.
 
-**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 최신 `Ipta-*-macos.dmg`를 받습니다. 예전 `*-arm64.dmg`는 애플실리콘 전용이었습니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
+**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.20-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
 
 **서명:** Minus Beta Studio 개발자 서명과 애플 공증이 되어 있습니다.
 

@@ -39,8 +39,12 @@ struct ResultView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                AppKitActionButton(title: "설정", identifier: "malgyeol-settings", action: { state.showSettings = true })
-                    .frame(maxWidth: 80, minHeight: 24)
+                HStack(spacing: 8) {
+                    AppKitActionButton(title: "설정", identifier: "malgyeol-settings", action: { state.showSettings = true })
+                        .frame(width: 80, height: 24)
+                    AppKitActionButton(title: "숨기기", identifier: "malgyeol-hide", action: { state.hidePanel() })
+                        .frame(width: 80, height: 24)
+                }
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)

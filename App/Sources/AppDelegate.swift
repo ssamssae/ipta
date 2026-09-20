@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var panel: NSWindow?
     private var settingsWindow: NSWindow?
+    private var hud: NSPanel?
     private var bags = Set<AnyCancellable>()
     private var hotkeys: HotKeyCenter?
     private var micButtons: MicButtonCenter?
@@ -22,6 +23,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupStatusItem()
         setupPanel()
         setupSettingsWindow()
+        setupHUD()
+        state.$phase
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.syncActivityChrome()
+            }
+            .store(in: &bags)
+        state.$recording
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.syncActivityChrome()
+            }
+            .store(in: &bags)
         state.$showSettings
             .receive(on: RunLoop.main)
             .sink { [weak self] show in
@@ -32,10 +46,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
             .store(in: &bags)
+        state.onHidePanel = { [weak self] in
+            self?.hidePanel()
+        }
         hotkeys = HotKeyCenter(toggle: state.toggleKey, cancel: state.cancelKey) { [weak self] action in
             guard let self else { return }
             switch action {
             case .toggle:
+                self.hidePanel()
                 self.state.toggle(fromHotkey: true)
             case .cancel:
                 self.state.cancel()
@@ -53,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.state.applyMicButton(spec)
         }
         buttons.onToggle = { [weak self] in
+            self?.hidePanel()
             self?.state.toggle(fromHotkey: true)
         }
         buttons.start()
@@ -71,35 +90,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return nil
             }
             if self.state.capturingMicButton {
-                if event.keyCode == UInt16(kVK_Escape) {
+                if HotKeySpec.isEscape(event) {
                     self.state.cancelMicButtonCapture()
                     return nil
                 }
                 return event
             }
-            guard let which = self.state.capturingHotkey else { return event }
-            if event.keyCode == UInt16(kVK_Escape) {
-                self.state.capturingHotkey = nil
+            if let which = self.state.capturingHotkey {
+                if HotKeySpec.isEscape(event) {
+                    self.state.capturingHotkey = nil
+                    return nil
+                }
+                guard let spec = HotKeySpec.from(event: event) else {
+                    self.state.settingsNotice = "Option 또는 Command를 함께 누르세요"
+                    return nil
+                }
+                var toggle = self.state.toggleKey
+                var cancel = self.state.cancelKey
+                switch which {
+                case .toggle: toggle = spec
+                case .cancel: cancel = spec
+                }
+                if toggle.keyCode == cancel.keyCode && toggle.modifiers == cancel.modifiers {
+                    self.state.settingsNotice = "시작과 취소에 같은 키를 쓸 수 없습니다"
+                    self.state.capturingHotkey = nil
+                    return nil
+                }
+                self.state.applyHotKeys(toggle: toggle, cancel: cancel)
+                self.state.settingsNotice = "단축키를 \(spec.label()) 로 바꿨습니다"
                 return nil
             }
-            guard let spec = HotKeySpec.from(event: event) else {
-                self.state.settingsNotice = "Option 또는 Command를 함께 누르세요"
+            if self.shouldCloseSettings(for: event) {
+                self.closeSettingsWindow()
                 return nil
             }
-            var toggle = self.state.toggleKey
-            var cancel = self.state.cancelKey
-            switch which {
-            case .toggle: toggle = spec
-            case .cancel: cancel = spec
-            }
-            if toggle.keyCode == cancel.keyCode && toggle.modifiers == cancel.modifiers {
-                self.state.settingsNotice = "시작과 취소에 같은 키를 쓸 수 없습니다"
-                self.state.capturingHotkey = nil
+            if self.shouldHideMainWindow(for: event) {
+                self.hidePanel()
                 return nil
             }
-            self.state.applyHotKeys(toggle: toggle, cancel: cancel)
-            self.state.settingsNotice = "단축키를 \(spec.label()) 로 바꿨습니다"
-            return nil
+            return event
         }
         malgyeolLog("launch \(MalgyeolInfo.label) ax=\(state.axTrusted)")
         if !state.axTrusted {
@@ -128,15 +157,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appMenu.addItem(quitItem)
         let appItem = NSMenuItem()
         appItem.submenu = appMenu
+        let fileMenu = NSMenu(title: "파일")
+        let closeItem = NSMenuItem(title: "닫기", action: #selector(closeKeyWindow), keyEquivalent: "w")
+        closeItem.target = self
+        fileMenu.addItem(closeItem)
+        let fileItem = NSMenuItem()
+        fileItem.submenu = fileMenu
         let main = NSMenu()
         main.addItem(appItem)
+        main.addItem(fileItem)
         NSApp.mainMenu = main
     }
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let btn = item.button {
-            btn.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: MalgyeolInfo.label)
+            btn.image = NSImage(systemSymbolName: RecordingHUD.statusSymbol(phase: .idle), accessibilityDescription: MalgyeolInfo.label)
             btn.toolTip = MalgyeolInfo.label
         }
         statusItem = item
@@ -146,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
         let open = NSMenuItem(title: "입타 창 열기", action: #selector(showPanel), keyEquivalent: "")
+        let hide = NSMenuItem(title: "입타 창 숨기기", action: #selector(hidePanel), keyEquivalent: "")
         let rec = NSMenuItem(
             title: "시작/정지 (\(state.toggleKey.label()))",
             action: #selector(toggle),
@@ -157,8 +194,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             keyEquivalent: ""
         )
         let quit = NSMenuItem(title: "종료", action: #selector(quit), keyEquivalent: "q")
-        for it in [open, rec, cancel, quit] { it.target = self }
+        for it in [open, hide, rec, cancel, quit] { it.target = self }
         menu.addItem(open)
+        menu.addItem(hide)
         menu.addItem(rec)
         menu.addItem(cancel)
         menu.addItem(.separator())
@@ -172,19 +210,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         view.frame = NSRect(x: 0, y: 0, width: 400, height: 520)
         let panel = NSWindow(
             contentRect: view.frame,
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: Self.mainStyleMask,
             backing: .buffered,
             defer: false
         )
         panel.title = MalgyeolInfo.label
         panel.contentView = view
         panel.isReleasedWhenClosed = false
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
+        panel.level = .normal
+        panel.hidesOnDeactivate = true
         panel.minSize = NSSize(width: 320, height: 280)
         panel.delegate = self
         self.panel = panel
-        showPanel()
+    }
+
+    private func setupHUD() {
+        hud = RecordingHUD.makePanel(state: state)
+    }
+
+    private func syncActivityChrome() {
+        if let btn = statusItem?.button {
+            let symbol = RecordingHUD.statusSymbol(phase: state.phase)
+            btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: MalgyeolInfo.label)
+            btn.contentTintColor = state.recording ? .systemRed : nil
+            if RecordingHUD.shouldShow(phase: state.phase) {
+                btn.toolTip = "입타 · \(RecordingHUD.title(for: state.phase))"
+            } else {
+                btn.toolTip = MalgyeolInfo.label
+            }
+        }
+        guard let hud else { return }
+        if RecordingHUD.shouldShow(phase: state.phase) {
+            RecordingHUD.place(hud)
+            hud.orderFrontRegardless()
+        } else {
+            hud.orderOut(nil)
+        }
     }
 
     private func setupSettingsWindow() {
@@ -215,6 +276,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         state.refreshPermissions()
+    }
+
+    @objc func hidePanel() {
+        state.showSettings = false
+        settingsWindow?.orderOut(nil)
+        panel?.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)
     }
 
     private func showSettingsWindow() {
@@ -250,6 +318,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     static let settingsStyleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable]
+    static let mainStyleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable]
+
+    func shouldCloseSettings(for event: NSEvent) -> Bool {
+        guard settingsWindow?.isVisible == true || state.showSettings else { return false }
+        let settingsIsTarget = settingsWindow?.isKeyWindow == true
+            || event.window === settingsWindow
+            || panel?.isKeyWindow != true
+        guard settingsIsTarget else { return false }
+        return HotKeySpec.closesSettingsWindow(event)
+    }
+
+    @objc func closeSettingsWindow() {
+        state.showSettings = false
+        settingsWindow?.orderOut(nil)
+    }
+
+    func shouldHideMainWindow(for event: NSEvent) -> Bool {
+        guard panel?.isVisible == true else { return false }
+        let mainIsTarget = panel?.isKeyWindow == true || event.window === panel
+        guard mainIsTarget else { return false }
+        return HotKeySpec.closesSettingsWindow(event)
+    }
+
+    @objc func closeKeyWindow() {
+        if settingsWindow?.isKeyWindow == true || (state.showSettings && panel?.isKeyWindow != true) {
+            closeSettingsWindow()
+            return
+        }
+        hidePanel()
+    }
 
     @objc func toggle() { state.toggle(fromHotkey: false) }
     @objc func cancel() { state.cancel() }

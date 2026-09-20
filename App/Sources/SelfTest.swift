@@ -187,8 +187,66 @@ enum SelfTest {
         } else {
             check("synthetic option-q is not quit", false)
         }
+        if let cmdW = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "w",
+            charactersIgnoringModifiers: "w",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_W)
+        ) {
+            check("synthetic command-w closes settings", HotKeySpec.isCommandW(cmdW) && HotKeySpec.closesSettingsWindow(cmdW))
+        } else {
+            check("synthetic command-w closes settings", false)
+        }
+        if let esc = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{1b}",
+            charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Escape)
+        ) {
+            check("synthetic escape closes settings", HotKeySpec.isEscape(esc) && HotKeySpec.closesSettingsWindow(esc))
+        } else {
+            check("synthetic escape closes settings", false)
+        }
+        if let optW = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .option,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "w",
+            charactersIgnoringModifiers: "w",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_W)
+        ) {
+            check("synthetic option-w does not close settings", !HotKeySpec.isCommandW(optW))
+        } else {
+            check("synthetic option-w does not close settings", false)
+        }
         check("synthetic settings window has title bar", AppDelegate.settingsStyleMask.contains(.titled))
         check("synthetic settings window can close", AppDelegate.settingsStyleMask.contains(.closable))
+        check("synthetic main window can hide", AppDelegate.mainStyleMask.contains(.miniaturizable) && AppDelegate.mainStyleMask.contains(.closable))
+        check(
+            "synthetic hide panel is wired",
+            AppDelegate.instancesRespond(to: #selector(AppDelegate.hidePanel))
+        )
+        check("synthetic hud title while recording", RecordingHUD.title(for: .recording) == "듣는 중")
+        check("synthetic hud title while transcribing", RecordingHUD.title(for: .transcribing) == "받아적는 중")
+        check("synthetic hud shows while recording", RecordingHUD.shouldShow(phase: .recording))
+        check("synthetic hud hides while idle", !RecordingHUD.shouldShow(phase: .idle))
+        check("synthetic menubar recording symbol", RecordingHUD.statusSymbol(phase: .recording) == "waveform.circle.fill")
         check(
             "synthetic icon reopen opens window",
             AppDelegate.instancesRespond(to: #selector(AppDelegate.applicationShouldHandleReopen(_:hasVisibleWindows:)))

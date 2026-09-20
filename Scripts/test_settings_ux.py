@@ -23,6 +23,11 @@ def main() -> int:
     failed += check("model box is plain language", 'GroupBox("말할 준비")' in result)
     failed += check("ready note is plain", "준비됐어요. 말해도 됩니다." in state)
     failed += check("settings window is titled", "settingsStyleMask" in delegate and "isMovableByWindowBackground = true" in delegate)
+    failed += check("escape and command-w close settings", "closesSettingsWindow" in delegate and "closeSettingsWindow" in delegate)
+    failed += check("file menu close is command-w", 'keyEquivalent: "w"' in delegate)
+    failed += check("main window can minimize", "mainStyleMask" in delegate and ".miniaturizable" in delegate)
+    failed += check("main window is not floating", "panel.level = .floating" not in delegate and "panel.level = .normal" in delegate)
+    failed += check("hide button exists", 'title: "숨기기"' in result and "hidePanel" in delegate)
     print(f"failed={failed}")
     return 1 if failed else 0
 

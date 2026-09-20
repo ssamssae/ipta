@@ -15,9 +15,9 @@ echo "copied to $TESTDIR/입타.app"
 # Launch without activating worker terminals; LSUIElement app
 open "$TESTDIR/입타.app"
 sleep 2
-if pgrep -lf '입타.app/Contents/MacOS/Malgyeol|Malgyeol.app/Contents/MacOS/Malgyeol' >/dev/null; then
+if pgrep -lf '입타.app/Contents/MacOS/Ipta|Malgyeol.app/Contents/MacOS/Ipta|Malgyeol.app/Contents/MacOS/Malgyeol' >/dev/null; then
   echo "LAUNCH_OK"
-  pgrep -lf 'Malgyeol|입타.app'
+  pgrep -lf 'Ipta|입타|Malgyeol'
 else
   echo "LAUNCH_FAIL" >&2
   exit 2

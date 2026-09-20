@@ -22,7 +22,26 @@ struct HotKeySpec: Equatable {
     }
 
     static func isCommandQ(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, event.keyCode == UInt16(kVK_ANSI_Q) else { return false }
+        isPlainCommand(event, keyCode: UInt16(kVK_ANSI_Q))
+    }
+
+    static func isCommandW(_ event: NSEvent) -> Bool {
+        isPlainCommand(event, keyCode: UInt16(kVK_ANSI_W))
+    }
+
+    static func isEscape(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, event.keyCode == UInt16(kVK_Escape) else { return false }
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            .subtracting([.function, .capsLock, .numericPad])
+        return mods.isEmpty
+    }
+
+    static func closesSettingsWindow(_ event: NSEvent) -> Bool {
+        isEscape(event) || isCommandW(event)
+    }
+
+    private static func isPlainCommand(_ event: NSEvent, keyCode: UInt16) -> Bool {
+        guard event.type == .keyDown, event.keyCode == keyCode else { return false }
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         return mods.contains(.command)
             && !mods.contains(.option)
