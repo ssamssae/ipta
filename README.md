@@ -6,7 +6,7 @@ Mac과 Windows에서 한국어를 받아 적는 앱입니다. 받아 적기는 �
 
 **Windows 10/11 x64:** `Ipta-0.1.21-windows.exe`를 받아 실행합니다. 별도 Python 설치 없이 사용합니다. 처음에는 받아 적기 모델을 내려받습니다. 자세한 사용법은 [Windows 안내](windows/README.md)를 보세요.
 
-**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.21-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
+**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.22-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
 
 **Mac 서명:** Minus Beta Studio 개발자 서명과 애플 공증을 거친 DMG를 배포합니다. Windows EXE는 코드 서명되지 않았습니다.
 
@@ -42,3 +42,10 @@ bash Scripts/package_dmg.sh
 - 클로드는 유료 계정이 없어 이번 실측에서 제외했습니다. Apple 기본 다듬기는 기존 경로를 유지합니다.
 
 같은 짧은 문장 실측(환경/서버에 따라 달라짐): Mac 그록 평균 39.8초 → 9.4초, 코덱스 7.4초, 커서 13.8초. Windows/WSL 그록 8.3초, 코덱스 13.7초, 커서 23.5초. 모든 모델이 즉시 응답한다는 의미는 아닙니다.
+
+## 0.1.22 Mac 다듬기
+Cursor에서 Grok 4.6 High Fast를 선택한 경우, 일반 받아 적기 다듬기에만 같은 Grok 4.6 Fast의 낮은 추론량을 사용합니다. 기본 Cursor 설정과 계정은 유지하며, 임시 설정은 요청 종료 후 지웁니다. 선택한 글 편집/요약과 다른 모델에는 적용하지 않습니다.
+
+같은 짧은 문장을 전후 각 3회 교차 측정한 평균은 13.7초 → 12.1초(약 12% 감소)였습니다. 서버 상태에 따른 변동은 있습니다. Codex도 비교했지만 속도 이득이 확인되지 않아 기존 방식을 유지했습니다.
+
+Windows 최신 배포는 [0.1.21](https://github.com/ssamssae/ipta/releases/tag/v0.1.21)입니다.
