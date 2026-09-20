@@ -134,7 +134,8 @@ enum PolishProbe {
         let text = OAuthCLI.polish(
             provider: provider,
             instructions: "설명 없이 다듬은 한 문장만 출력한다. 새 사실을 만들지 않는다.",
-            user: "어 아테나에서 다듬기 확인만 해볼게"
+            user: "어 아테나에서 다듬기 확인만 해볼게",
+            optimizeDictation: true
         )
         guard let text, !text.isEmpty else {
             fputs("polish-probe-empty\n", stdout)

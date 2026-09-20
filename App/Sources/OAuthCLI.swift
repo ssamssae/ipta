@@ -171,7 +171,7 @@ enum OAuthCLI {
         return "\(provider.title) 로그인 창을 열었습니다"
     }
 
-    static func polish(provider: PolishProvider, instructions: String, user: String, key: String = "") -> String? {
+    static func polish(provider: PolishProvider, instructions: String, user: String, key: String = "", optimizeDictation: Bool = false) -> String? {
         guard let bin = binary(for: provider) else { return nil }
         let prompt = """
         \(instructions)
@@ -204,12 +204,31 @@ enum OAuthCLI {
         }
         if provider == .cursor {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ipta-cursor-" + UUID().uuidString)
+            let workspace = directory.appendingPathComponent("workspace", isDirectory: true)
             do {
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
                 profileDirectory = directory
+                try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: false)
             } catch { return nil }
+            // Keep CLI preference writes out of the user's configuration and out of the workspace.
+            if optimizeDictation, key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let data = try? Data(contentsOf: cursorConfigurationDirectory().appendingPathComponent("cli-config.json")),
+               let model = cursorPolishModel(configuration: data) {
+                let config = directory.appendingPathComponent("configuration", isDirectory: true)
+                do {
+                    try FileManager.default.createDirectory(at: config, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+                    let file = config.appendingPathComponent("cli-config.json")
+                    try data.write(to: file, options: .atomic)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+                    environment["CURSOR_CONFIG_DIR"] = config.path
+                    args += ["--model", model]
+                    malgyeolLog("polish cursor effort=low scope=dictation isolated=true")
+                } catch {
+                    // Optimization is optional; the original account/model remains usable.
+                }
+            }
             // Only this app-created empty workspace is trusted; never use --force/--yolo.
-            args += ["--workspace", directory.path, "--trust"]
+            args += ["--workspace", workspace.path, "--trust"]
             let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 args.insert(contentsOf: ["--api-key", trimmed], at: 0)
@@ -231,6 +250,27 @@ enum OAuthCLI {
         malgyeolLog("polish oauth exit=\(result.code) chars=\(result.out.count)")
         let text = cleanOutput(result.out)
         return text.isEmpty ? nil : text
+    }
+
+    static func cursorConfigurationDirectory(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        if let path = environment["CURSOR_CONFIG_DIR"], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        if let path = environment["XDG_CONFIG_HOME"], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("cursor")
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cursor")
+    }
+
+    static func cursorPolishModel(configuration: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: configuration) as? [String: Any],
+              let selected = object["selectedModel"] as? [String: Any],
+              selected["modelId"] as? String == "grok-4.6",
+              let parameters = selected["parameters"] as? [[String: String]],
+              parameters.contains(where: { $0["id"] == "effort" && $0["value"] == "high" }),
+              parameters.contains(where: { $0["id"] == "fast" && $0["value"] == "true" }) else { return nil }
+        // Same Grok 4.6 and Fast tier; lower effort only for the measured dictation path.
+        return "cursor-grok-4.6-low-fast"
     }
 
     private struct RunResult {

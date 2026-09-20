@@ -191,7 +191,7 @@ final class Polisher: @unchecked Sendable {
         case .cursor:
             let key = plan.needsPastedKey ? KeychainBox.get(provider: .cursor) : ""
             if plan.usesOAuth || !key.isEmpty,
-               let text = OAuthCLI.polish(provider: .cursor, instructions: instructions, user: user, key: key)
+               let text = OAuthCLI.polish(provider: .cursor, instructions: instructions, user: user, key: key, optimizeDictation: instructions == Self.polishInstructions)
             {
                 return stillCurrent(job) ? sanitize(text, source: user) : nil
             }
