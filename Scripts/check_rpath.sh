@@ -9,7 +9,7 @@ audit() {
   otool -L "$bin"
   echo "-- LC_RPATH --"
   otool -l "$bin" | awk '/LC_RPATH/,/path/ {print}'
-  if otool -L "$bin" | awk 'NR>1' | grep -E '/opt/homebrew|/usr/local|/Users/'; then
+  if otool -arch all -L "$bin" | awk '/^\t/ {print $1}' | grep -E '/opt/homebrew|/usr/local|^/Users/'; then
     echo "FAIL: forbidden dylib path in $bin" >&2
     fail=1
   fi

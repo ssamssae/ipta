@@ -9,7 +9,7 @@ struct ResultView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text(MalgyeolInfo.label)
                     .font(.title.weight(.semibold))
-                Text("받아적기는 이 Mac에서만 합니다. 다듬기 연결을 켜면 고른 모델로 글만 보냅니다.")
+                Text("받아적기는 이 Mac에서만 합니다. 다듬기는 선택입니다. 그록·커서·클로드를 쓰려면 그 프로그램을 이 맥에 두고 본인 계정으로 로그인하세요.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -46,9 +46,6 @@ struct ResultView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minWidth: 320, minHeight: 280)
-        .sheet(isPresented: $state.showSettings) {
-            SettingsView(state: state)
-        }
         .onAppear { state.refreshPermissions() }
     }
 
@@ -91,8 +88,8 @@ struct ResultView: View {
         }
         if !state.modelReady, state.phase != .downloading {
             guidance(
-                title: "받아적기 준비",
-                body: "처음 한 번만 준비 파일을 받습니다. 약 465MB, 이 Mac에만 저장됩니다.",
+                title: "말한 소리를 글로 바꿀 준비",
+                body: "처음 한 번만 준비 파일을 받습니다. 약 465MB이고, 이 맥에만 둡니다. 다 받으면 바로 말할 수 있습니다.",
                 action: "지금 받기",
                 run: state.downloadModel
             )
@@ -100,7 +97,7 @@ struct ResultView: View {
         if !state.axTrusted {
             guidance(
                 title: "다른 앱에 바로 넣기",
-                body: "손쉬운 사용을 켜면 단축키로 원래 칸에 넣습니다. 꺼져 있어도 아래 복사로 쓸 수 있습니다.",
+                body: "시스템 설정 → 손쉬운 사용에서 입타를 켜면, 말한 글이 원래 쓰던 칸에 들어갑니다. 꺼져 있으면 아래 복사로 직접 붙여 넣으세요.",
                 action: "손쉬운 사용 설정 열기",
                 run: state.openAxSettings
             )
@@ -157,15 +154,27 @@ struct ResultView: View {
 
 struct SettingsView: View {
     @ObservedObject var state: AppState
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("설정").font(.title3.weight(.semibold))
                 Spacer()
-                AppKitActionButton(title: "닫기", identifier: "malgyeol-settings-close", action: { dismiss() })
-                    .frame(width: 72, height: 28)
+                AppKitActionButton(title: "닫기", identifier: "malgyeol-settings-close", action: { state.showSettings = false })
+                    .frame(width: 72, height: 24)
+            }
+
+            GroupBox("지금 상태") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("지금 하는 일: \(state.phase.rawValue)")
+                    Text("다른 앱에 바로 넣기: \(state.axTrusted ? "켜짐" : "꺼짐")")
+                    Text("넣을 칸: \(state.lockedSummary.isEmpty ? "아직 없음" : state.lockedSummary)")
+                    Text("기록 파일: \(MalgyeolInfo.logURL.path)")
+                        .textSelection(.enabled)
+                }
+                .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             GroupBox("마이크") {
@@ -211,13 +220,17 @@ struct SettingsView: View {
                 }
             }
 
-            GroupBox("다듬기 구독") {
+            GroupBox("말한 글 다듬기") {
                 VStack(alignment: .leading, spacing: 8) {
+                    Text(PolishProvider.outsideBrainGuide)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Toggle("말한 글을 다듬어 넣기", isOn: Binding(
                         get: { state.polishEnabled },
                         set: { state.setPolishEnabled($0) }
                     ))
-                    Picker("요금", selection: Binding(
+                    Picker("어디서", selection: Binding(
                         get: { state.polishPlan.tier },
                         set: { state.setPolishTier($0) }
                     )) {
@@ -229,33 +242,63 @@ struct SettingsView: View {
                         get: { state.polishPlan.provider },
                         set: { state.setPolishProvider($0) }
                     )) {
-                        ForEach(PolishProvider.allCases) { p in
+                        ForEach(PolishProvider.visible(for: state.polishPlan.tier)) { p in
                             Text(p.title).tag(p)
                         }
                     }
-                    .disabled(state.polishPlan.tier == .free)
+                    Text(state.polishPlan.provider.hint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if state.polishPlan.tier == .connected, state.polishPlan.provider.supportsOAuth {
-                        Picker("연결", selection: Binding(
-                            get: { state.polishPlan.authMode },
-                            set: { state.setPolishAuthMode($0) }
-                        )) {
-                            ForEach(PolishAuthMode.allCases) { m in
-                                Text(m.title).tag(m)
-                            }
-                        }
-                        if state.polishPlan.authMode == .oauth, !state.oauthNote.isEmpty {
+                        if !state.oauthNote.isEmpty {
                             Text(state.oauthNote)
+                                .font(.caption)
+                                .foregroundStyle(state.oauthReady ? .primary : .secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if !state.oauthReady, !state.oauthBlocked {
+                            Text("로그인 버튼을 누르면 브라우저가 열립니다. 본인 계정으로 끝나면 여기 자동으로 붙습니다.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        if state.polishPlan.provider.installURL != nil {
+                            AppKitActionButton(
+                                title: "\(state.polishPlan.provider.title) 받는 곳 열기",
+                                action: { state.openProviderInstallPage() }
+                            )
+                            .frame(minWidth: 180, minHeight: 24)
+                        }
+                        AppKitActionButton(
+                            title: state.oauthWatching
+                                ? "로그인 기다리는 중…"
+                                : (state.oauthReady
+                                    ? "\(state.polishPlan.provider.title) 다시 로그인"
+                                    : "\(state.polishPlan.provider.title)으로 로그인"),
+                            action: { state.beginOAuthLogin() }
+                        )
+                        .frame(minWidth: 180, minHeight: 28)
+                        if state.polishPlan.authMode != .key {
+                            AppKitActionButton(
+                                title: "키를 직접 넣을게요",
+                                action: { state.setPolishAuthMode(.key) }
+                            )
+                            .frame(minWidth: 140, minHeight: 24)
+                        } else {
+                            AppKitActionButton(
+                                title: "로그인으로 돌아가기",
+                                action: { state.setPolishAuthMode(.oauth) }
+                            )
+                            .frame(minWidth: 140, minHeight: 24)
+                        }
                     }
-                    if state.polishPlan.tier == .connected, state.polishPlan.provider.hasLocalModelPicker {
+                    if state.polishPlan.provider.hasLocalModelPicker, !LocalPolishModel.visibleOnThisMac().isEmpty {
                         Picker("이 맥 모델", selection: Binding(
                             get: { LocalPolishModel.resolve(state.polishPlan.model) },
                             set: { state.setLocalPolishModel($0) }
                         )) {
-                            ForEach(LocalPolishModel.allCases) { m in
+                            ForEach(LocalPolishModel.visibleOnThisMac()) { m in
                                 Text(m.title).tag(m)
                             }
                         }
@@ -276,12 +319,8 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    Text("이 맥 로그인은 이미 켜 둔 클로드·코덱스·커서·그록을 그대로 씁니다. 입타가 토큰을 꺼내 저장하지 않습니다. 내 키를 고르면 열쇠고리에만 넣습니다. 함대 공용 키는 안 씁니다.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                     if state.polishPlan.provider.sendsOffDevice, state.polishPlan.tier == .connected {
-                        Text("연결하면 다듬을 글만 고른 회사로 갑니다. 받아적기 소리는 안 보냅니다.")
+                        Text("다듬을 글만 고른 곳으로 갑니다. 받아 적기 소리는 안 보냅니다.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -334,42 +373,38 @@ struct SettingsView: View {
                 }
             }
 
-            GroupBox("받아적기 파일") {
-                VStack(alignment: .leading) {
+            GroupBox("말할 준비") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("말을 글로 바꾸려면 처음에 준비 파일을 받아 둬요. 한 번만 받으면 됩니다. 약 465MB이고 이 맥에만 둡니다.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(state.downloadNote)
+                        .font(.body.weight(.medium))
                     if state.phase == .downloading {
                         ProgressView(value: state.downloadProgress)
                     }
                     HStack {
                         AppKitActionButton(
-                            title: "받기 / 다시 시도",
+                            title: state.modelReady ? "준비 파일 다시 받기" : "준비 파일 받기",
                             enabled: state.phase != .downloading && !state.recording,
                             action: { state.downloadModel() }
                         )
-                        .frame(minWidth: 120, minHeight: 24)
+                        .frame(minWidth: 140, minHeight: 24)
                         AppKitActionButton(
                             title: "취소",
                             enabled: state.phase == .downloading,
                             action: { state.cancel() }
                         )
-                        .frame(width: 72, height: 28)
+                        .frame(width: 72, height: 24)
                     }
                 }
             }
-
-            DisclosureGroup("자세한 상태") {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("단계: \(state.phase.rawValue)")
-                    Text("손쉬운 사용: \(state.axTrusted ? "허용" : "없음")")
-                    Text("대상: \(state.lockedSummary.isEmpty ? "없음" : state.lockedSummary)")
-                    Text("로그: \(MalgyeolInfo.logURL.path)")
-                }
-                .font(.caption)
-                .textSelection(.enabled)
             }
+            .padding(16)
+            .frame(minWidth: 400)
         }
-        .padding(16)
-        .frame(minWidth: 400, minHeight: 820)
+        .frame(minWidth: 420, minHeight: 480)
         .onAppear {
             state.refreshPermissions()
             state.refreshOAuthStatus()

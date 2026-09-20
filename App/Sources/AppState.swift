@@ -44,6 +44,9 @@ final class AppState: ObservableObject {
     @Published var capturingMicButton = false
     @Published var settingsNotice = ""
     @Published var oauthNote = ""
+    @Published var oauthReady = false
+    @Published var oauthBlocked = false
+    @Published var oauthWatching = false
 
     let recorder = Recorder()
     let models = ModelManager()
@@ -61,6 +64,7 @@ final class AppState: ObservableObject {
     var onMicButtonChange: (() -> Void)?
     var onMicCaptureChange: ((Bool) -> Void)?
     private var micCaptureToken = 0
+    private var oauthWatch: Task<Void, Never>?
     private let deviceKey = "malgyeol.selectedDeviceId"
 
     init() {
@@ -72,7 +76,9 @@ final class AppState: ObservableObject {
             polishEnabled = UserDefaults.standard.bool(forKey: "malgyeol.polish")
         }
         polishPlan = PolishPlan.load()
+        polishPlan.save()
         polishKeyDraft = ""
+        refreshOAuthStatus()
         NotificationCenter.default.addObserver(forName: .malgyeolDownload, object: nil, queue: .main) { [weak self] note in
             let frac = note.userInfo?["frac"] as? Double ?? 0
             let written = note.userInfo?["written"] as? Int64 ?? 0
@@ -102,7 +108,7 @@ final class AppState: ObservableObject {
         let sizeOK = models.sizeLooksReady()
         modelReady = sizeOK
         if sizeOK {
-            downloadNote = "받아적기 준비됨"
+            downloadNote = "준비됐어요. 말해도 됩니다."
             if !hashChecked {
                 hashChecked = true
                 models.verifyHashOffMain { [weak self] ok in
@@ -119,7 +125,7 @@ final class AppState: ObservableObject {
         } else {
             hashChecked = false
             if phase != .downloading {
-                downloadNote = "처음이면 받아적기 파일을 한 번 받습니다 (약 465MB)"
+                downloadNote = "아직 준비 안 됐어요. 받기 버튼을 누르세요."
             }
         }
         refreshHotkeyNote()
@@ -359,21 +365,76 @@ final class AppState: ObservableObject {
     }
 
     func setPolishTier(_ tier: PolishTier) {
-        polishPlan.tier = tier
+        var next = polishPlan
+        next.tier = tier
+        if tier == .free, next.provider.sendsOffDevice {
+            next.provider = .apple
+            next.model = PolishProvider.apple.defaultModel
+        }
+        polishPlan = next
         polishPlan.save()
+        settingsNotice = "\(next.provider.hint)"
+        refreshOAuthStatus()
     }
 
     func setPolishProvider(_ provider: PolishProvider) {
-        polishPlan.provider = provider
-        polishPlan.model = provider.defaultModel
-        if !provider.supportsOAuth {
-            polishPlan.authMode = .key
-        } else if polishPlan.authMode != .oauth && polishPlan.authMode != .key {
-            polishPlan.authMode = .oauth
+        if provider == .local, !LocalStudio.isInstalled {
+            settingsNotice = "이 맥에는 20비·27비 파일이 없습니다. 애플 지능을 씁니다."
+            var fallback = polishPlan
+            fallback.provider = .apple
+            fallback.model = PolishProvider.apple.defaultModel
+            polishPlan = fallback
+            polishPlan.save()
+            return
         }
+        var next = polishPlan
+        next.provider = provider
+        next.model = provider.defaultModel
+        if provider.supportsOAuth {
+            next.tier = .connected
+            next.authMode = .oauth
+        } else {
+            next.authMode = .key
+        }
+        polishPlan = next
         polishPlan.save()
         polishKeyDraft = ""
+        settingsNotice = provider.hint
+        if !polishEnabled {
+            setPolishEnabled(true)
+        }
         refreshOAuthStatus()
+        if polishPlan.usesOAuth {
+            if oauthReady {
+                settingsNotice = "\(provider.title) 연결됨"
+            } else if oauthBlocked {
+                settingsNotice = oauthNote
+            } else {
+                beginOAuthLogin()
+            }
+        }
+    }
+
+    func beginOAuthLogin() {
+        guard polishPlan.provider.supportsOAuth else {
+            settingsNotice = "이 모델은 로그인 창이 없습니다"
+            return
+        }
+        if polishPlan.authMode != .oauth {
+            polishPlan.authMode = .oauth
+            polishPlan.save()
+        }
+        refreshOAuthStatus()
+        if oauthReady {
+            settingsNotice = "\(polishPlan.provider.title) 연결됨"
+            return
+        }
+        if oauthBlocked {
+            settingsNotice = oauthNote
+            return
+        }
+        settingsNotice = OAuthCLI.startLogin(polishPlan.provider)
+        watchOAuthUntilReady()
     }
 
     func setPolishAuthMode(_ mode: PolishAuthMode) {
@@ -384,17 +445,61 @@ final class AppState: ObservableObject {
     }
 
     func refreshOAuthStatus() {
-        guard polishPlan.usesOAuth else {
+        guard polishPlan.provider.supportsOAuth, polishPlan.tier == .connected else {
             oauthNote = ""
+            oauthReady = false
             return
         }
         let probe = OAuthCLI.probe(polishPlan.provider)
         oauthNote = probe.note
+        oauthReady = probe.ready
+        oauthBlocked = probe.blocked
+    }
+
+    private func watchOAuthUntilReady() {
+        oauthWatch?.cancel()
+        oauthWatching = true
+        let provider = polishPlan.provider
+        oauthWatch = Task { [weak self] in
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled else { return }
+                let probe = OAuthCLI.probe(provider)
+                await MainActor.run {
+                    guard let self else { return }
+                    guard self.polishPlan.provider == provider else { return }
+                    self.oauthNote = probe.note
+                    self.oauthReady = probe.ready
+                    self.oauthBlocked = probe.blocked
+                    if probe.ready {
+                        self.settingsNotice = "\(provider.title) 연결됨"
+                        self.oauthWatching = false
+                    } else if probe.blocked {
+                        self.settingsNotice = probe.note
+                        self.oauthWatching = false
+                    }
+                }
+                if probe.ready || probe.blocked { return }
+            }
+            await MainActor.run {
+                guard let self, !Task.isCancelled else { return }
+                self.oauthWatching = false
+                if !self.oauthReady {
+                    self.settingsNotice = "아직 로그인이 안 됐습니다. 브라우저에서 끝난 뒤 다시 눌러 보세요"
+                }
+            }
+        }
     }
 
     func setLocalPolishModel(_ model: LocalPolishModel) {
-        polishPlan.provider = .local
-        polishPlan.model = model.rawValue
+        guard model.isPresent else {
+            settingsNotice = "이 맥에는 \(model.title) 파일이 없습니다"
+            return
+        }
+        var next = polishPlan
+        next.provider = .local
+        next.model = model.rawValue
+        polishPlan = next
         polishPlan.save()
         settingsNotice = "\(model.title) 로 골랐습니다"
     }
@@ -481,10 +586,19 @@ final class AppState: ObservableObject {
                     self.statusLine = "받기 실패 — 다시 시도할 수 있습니다"
                 } else {
                     self.phase = .idle
-                    self.statusLine = "받아적기 준비됨"
+                    self.statusLine = "말한 소리를 글로 바꿀 준비가 되었습니다"
                 }
             }
         }
+    }
+
+    func openProviderInstallPage() {
+        guard let url = polishPlan.provider.installURL else {
+            settingsNotice = "받는 곳 주소를 모릅니다"
+            return
+        }
+        NSWorkspace.shared.open(url)
+        settingsNotice = "\(polishPlan.provider.title) 받는 곳을 열었습니다"
     }
 
     func openMicSettings() { PrivacySettings.openMicrophone() }

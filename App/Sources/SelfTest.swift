@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import Foundation
 
 enum SelfTest {
@@ -107,6 +108,16 @@ enum SelfTest {
         check("synthetic same-app fallback refuses AXSheet", !paster.sameAppFallback(target(role: "AXSheet"), target(role: "AXSheet")))
         check("synthetic cleaner drops leading filler", SpeechCleaner.clean("어 입타 붙여넣기") == "입타 붙여넣기", SpeechCleaner.clean("어 입타 붙여넣기"))
         check("synthetic cleaner keeps last intent", SpeechCleaner.clean("빨간색 아니 파란색으로") == "파란색으로", SpeechCleaner.clean("빨간색 아니 파란색으로"))
+        check("synthetic cleaner keeps last intent after 아냐", SpeechCleaner.clean("오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자") == "김치찌개로 하자", SpeechCleaner.clean("오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자"))
+        let spoken = "음 어 그니까 오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자"
+        check(
+            "synthetic invented side dishes are dropped",
+            !SpeechCleaner.keepsSpokenFacts("김치찌개와 함께 김치전과 김치찌개국수를 먹으면 어떨까?", source: spoken)
+        )
+        check(
+            "synthetic last-intent dinner is kept",
+            SpeechCleaner.keepsSpokenFacts("김치찌개로 하자", source: spoken)
+        )
         check("synthetic command 요약해 is selection", SpeechCleaner.command(from: "요약해") == .editSelection)
         check("synthetic long mention of 요약 is spoken polish", SpeechCleaner.command(from: "타입리스는 요약도 해준다던데") == .polishSpoken)
         check("synthetic claude url is anthropic", PolishProvider.claude.chatURL?.host == "api.anthropic.com")
@@ -124,7 +135,64 @@ enum SelfTest {
             check("synthetic local 27b request body", false)
         }
         check("synthetic local wait is longer than cloud", PolishProvider.local.requestTimeout > PolishProvider.claude.requestTimeout)
-        check("synthetic free plan cannot use model", PolishPlan(tier: .free, provider: .claude, model: "x", authMode: .key).canAttemptModel == false)
+        check("synthetic free plan cannot use claude", PolishPlan(tier: .free, provider: .claude, model: "x", authMode: .key).canAttemptModel == false)
+        check("synthetic free apple can use on-device model", PolishPlan(tier: .free, provider: .apple, model: "apple-intelligence", authMode: .key).canAttemptModel == true)
+        check("synthetic default provider title is apple", PolishProvider.apple.title == "애플 지능")
+        check("synthetic apple hint mentions this mac", PolishProvider.apple.hint.contains("이 맥"))
+        check("synthetic claude hint mentions claude", PolishProvider.claude.hint.contains("클로드"))
+        check("synthetic outside guide mentions own login", PolishProvider.outsideBrainGuide.contains("본인"))
+        check("synthetic grok missing program has title", PolishProvider.grok.missingProgramNote.contains("그록"))
+        check("synthetic claude install url", PolishProvider.claude.installURL != nil)
+        check("synthetic grok install url", PolishProvider.grok.installURL != nil)
+        check("synthetic cursor install url", PolishProvider.cursor.installURL != nil)
+        check("synthetic codex install url", PolishProvider.openai.installURL != nil)
+        check("synthetic free picker hides cloud", PolishProvider.visible(for: .free, localAvailable: true) == [.apple, .local])
+        check("synthetic free picker hides local when missing", PolishProvider.visible(for: .free, localAvailable: false) == [.apple])
+        check("synthetic connected picker keeps claude", PolishProvider.visible(for: .connected, localAvailable: true).contains(.claude))
+        check("synthetic connected picker hides local when missing", !PolishProvider.visible(for: .connected, localAvailable: false).contains(.local))
+        check("synthetic twenty id is gpt-oss-20b", LocalPolishModel.twenty.rawValue == "gpt-oss-20b")
+        check("synthetic twentyseven id is qwen", LocalPolishModel.twentySeven.rawValue == "qwen3.8-27b")
+        let localPlan = PolishPlan(tier: .connected, provider: .local, model: "gpt-oss-20b", authMode: .key)
+        check("synthetic other mac cannot run hermes local", localPlan.canAttemptModel(localAvailable: false) == false)
+        check("synthetic this mac can run local when files exist", localPlan.canAttemptModel(localAvailable: true) == true)
+        if let cmdQ = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "q",
+            charactersIgnoringModifiers: "q",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_Q)
+        ) {
+            check("synthetic command-q is quit", HotKeySpec.isCommandQ(cmdQ))
+        } else {
+            check("synthetic command-q is quit", false)
+        }
+        if let optQ = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .option,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "q",
+            charactersIgnoringModifiers: "q",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_Q)
+        ) {
+            check("synthetic option-q is not quit", !HotKeySpec.isCommandQ(optQ))
+        } else {
+            check("synthetic option-q is not quit", false)
+        }
+        check("synthetic settings window has title bar", AppDelegate.settingsStyleMask.contains(.titled))
+        check("synthetic settings window can close", AppDelegate.settingsStyleMask.contains(.closable))
+        check(
+            "synthetic icon reopen opens window",
+            AppDelegate.instancesRespond(to: #selector(AppDelegate.applicationShouldHandleReopen(_:hasVisibleWindows:)))
+        )
         check("synthetic connected plan can use model", PolishPlan(tier: .connected, provider: .claude, model: "x", authMode: .key).canAttemptModel == true)
         check("synthetic cursor is a live provider", PolishProvider.allCases.contains(.cursor))
         check("synthetic cursor supports oauth", PolishProvider.cursor.supportsOAuth)
@@ -135,6 +203,16 @@ enum SelfTest {
         check("synthetic codex oauth starts with exec", OAuthCLI.arguments(provider: .openai, prompt: "hi").first == "exec")
         check("synthetic grok oauth starts with -p", OAuthCLI.arguments(provider: .grok, prompt: "hi").first == "-p")
         check("synthetic cursor oauth uses ask", OAuthCLI.arguments(provider: .cursor, prompt: "hi").contains("ask"))
+        check("synthetic cursor login opens official login", OAuthCLI.loginArguments(for: .cursor) == ["login"])
+        check("synthetic grok login opens browser oauth", OAuthCLI.loginArguments(for: .grok) == ["login", "--oauth"])
+        let cursorAuthed = OAuthCLI.parseCursorStatus(#"{"isAuthenticated":true,"status":"ok"}"#)
+        check("synthetic cursor json ready", cursorAuthed.ready && !cursorAuthed.blocked)
+        let cursorOut = OAuthCLI.parseCursorStatus(#"{"isAuthenticated":false,"status":"ok"}"#)
+        check("synthetic cursor json not ready", !cursorOut.ready && !cursorOut.blocked)
+        let cursorLocked = OAuthCLI.parseCursorStatus("Error: Your macOS login keychain is locked.\nRun security unlock-keychain and try again.")
+        check("synthetic cursor keychain lock is blocked", !cursorLocked.ready && cursorLocked.blocked)
+        let cursorNot = OAuthCLI.parseCursorStatus("✗ Not logged in")
+        check("synthetic cursor not-logged-in is waiting", !cursorNot.ready && !cursorNot.blocked)
         check("synthetic oauth bins named", OAuthCLI.binaryNames(for: .openai) == ["codex"] && OAuthCLI.binaryNames(for: .cursor).contains("agent"))
         check("synthetic claude request needs key", PolishAPI.makeRequest(provider: .claude, key: "", model: "m", system: "s", user: "u") == nil)
         let claudeReq = PolishAPI.makeRequest(provider: .claude, key: "sk-test", model: "m", system: "s", user: "u")

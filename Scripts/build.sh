@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Reproducible 말결 .app build. Does not require Homebrew at runtime.
+# Reproducible 입타 .app build. Does not require Homebrew at runtime.
+# IPTA_ARCH=arm64|x86_64|universal  (default: universal — one product for Intel + Apple Silicon)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${MALGYEOL_OUT:-$ROOT/dist}"
@@ -7,17 +8,18 @@ BUILD="$ROOT/.build-cache"
 APP="$OUT/Malgyeol.app"
 PIN_WHISPER="${WHISPER_REF:-v1.7.5}"
 DEPLOY=14.0
-ARCH="$(uname -m)"
-if [[ "$ARCH" != "arm64" ]]; then
-  echo "supports Apple Silicon arm64 only (got $ARCH)" >&2
-  exit 1
-fi
+IPTA_ARCH="${IPTA_ARCH:-universal}"
+case "$IPTA_ARCH" in
+  arm64|x86_64|universal) ;;
+  *) echo "IPTA_ARCH must be arm64, x86_64, or universal (got $IPTA_ARCH)" >&2; exit 1 ;;
+esac
+
 export CC="${CC:-/usr/bin/clang}"
 export CXX="${CXX:-/usr/bin/clang++}"
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 mkdir -p "$BUILD" "$OUT"
 
-log() { printf '[malgyeol-build] %s\n' "$*"; }
+log() { printf '[ipta-build] %s\n' "$*"; }
 
 if ! command -v cmake >/dev/null 2>&1; then
   CMAKE_VER=3.30.5
@@ -31,7 +33,7 @@ if ! command -v cmake >/dev/null 2>&1; then
   fi
   export PATH="$CMAKE_DIR/CMake.app/Contents/bin:$PATH"
 fi
-log "cmake=$(command -v cmake)"
+log "cmake=$(command -v cmake) arch=$IPTA_ARCH"
 
 WHISPER_SRC="$ROOT/Vendor/whisper.cpp"
 if [[ ! -d "$WHISPER_SRC/.git" ]]; then
@@ -42,69 +44,124 @@ fi
 WHISPER_HEAD="$(git -C "$WHISPER_SRC" rev-parse HEAD)"
 log "whisper HEAD=$WHISPER_HEAD"
 
-WHISPER_BLD="$BUILD/whisper-build"
-mkdir -p "$WHISPER_BLD"
-cmake -S "$WHISPER_SRC" -B "$WHISPER_BLD" \
-  -DCMAKE_C_COMPILER="$CC" \
-  -DCMAKE_CXX_COMPILER="$CXX" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOY" \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DWHISPER_BUILD_EXAMPLES=ON \
-  -DBUILD_SHARED_LIBS=OFF \
-  -DGGML_METAL=ON \
-  -DGGML_METAL_EMBED_LIBRARY=ON
-cmake --build "$WHISPER_BLD" --config Release --target whisper-cli -j "$(sysctl -n hw.ncpu)"
+build_whisper() {
+  local arch="$1"
+  local bld="$BUILD/whisper-build-$arch"
+  mkdir -p "$bld"
+  # GGML_NATIVE=ON on an M-series host injects -mcpu=apple-m4 into the x86_64 slice.
+  local cflags="-arch ${arch} -mmacosx-version-min=${DEPLOY}"
+  if [[ "$arch" == "x86_64" ]]; then
+    cflags+=" -march=x86-64 -mtune=generic"
+  fi
+  cmake -S "$WHISPER_SRC" -B "$bld" \
+    -DCMAKE_C_COMPILER="$CC" \
+    -DCMAKE_CXX_COMPILER="$CXX" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOY" \
+    -DCMAKE_OSX_ARCHITECTURES="$arch" \
+    -DCMAKE_C_FLAGS="$cflags" \
+    -DCMAKE_CXX_FLAGS="$cflags" \
+    -DWHISPER_BUILD_EXAMPLES=ON \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_NATIVE=OFF \
+    -DGGML_METAL=ON \
+    -DGGML_METAL_EMBED_LIBRARY=ON >&2
+  cmake --build "$bld" --config Release --target whisper-cli -j "$(sysctl -n hw.ncpu)" >&2
+  local cli
+  cli="$(find "$bld" -name whisper-cli -type f | head -n 1)"
+  if [[ -z "$cli" || ! -x "$cli" ]]; then
+    echo "whisper-cli missing for $arch" >&2
+    exit 1
+  fi
+  printf '%s\n' "$cli"
+}
 
-CLI="$(find "$WHISPER_BLD" -name whisper-cli -type f | head -n 1)"
-if [[ -z "$CLI" ]]; then
-  echo "whisper-cli missing" >&2
-  exit 1
+build_swift() {
+  local arch="$1"
+  (
+    cd "$ROOT"
+    swift build -c release --arch "$arch" \
+      -Xswiftc -target -Xswiftc "${arch}-apple-macosx${DEPLOY}"
+  ) >&2
+  local bin
+  bin="$(cd "$ROOT" && swift build -c release --arch "$arch" --show-bin-path)/Malgyeol"
+  if [[ ! -x "$bin" ]]; then
+    echo "swift binary missing for $arch: $bin" >&2
+    exit 1
+  fi
+  printf '%s\n' "$bin"
+}
+
+if [[ "$IPTA_ARCH" == "universal" ]]; then
+  log "whisper arm64"
+  W_ARM="$(build_whisper arm64)"
+  log "whisper x86_64"
+  W_X86="$(build_whisper x86_64)"
+  lipo -create -output "$BUILD/whisper-cli-universal" "$W_ARM" "$W_X86"
+  CLI="$BUILD/whisper-cli-universal"
+  log "swift arm64"
+  S_ARM="$(build_swift arm64)"
+  log "swift x86_64"
+  S_X86="$(build_swift x86_64)"
+  lipo -create -output "$BUILD/Ipta-universal" "$S_ARM" "$S_X86"
+  BIN="$BUILD/Ipta-universal"
+else
+  CLI="$(build_whisper "$IPTA_ARCH")"
+  BIN="$(build_swift "$IPTA_ARCH")"
 fi
 log "whisper-cli=$CLI"
-
-log "swift build"
-cd "$ROOT"
-swift build -c release --arch arm64 -Xswiftc -target -Xswiftc "arm64-apple-macosx${DEPLOY}"
-BIN="$(swift build -c release --arch arm64 --show-bin-path)/Malgyeol"
-test -x "$BIN"
+log "swift-bin=$BIN"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources" "$APP/Contents/Library"
 cp "$ROOT/App/Info.plist" "$APP/Contents/Info.plist"
-cp "$BIN" "$APP/Contents/MacOS/Malgyeol"
+if [[ -f "$ROOT/App/Resources/AppIcon.icns" ]]; then
+  cp "$ROOT/App/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+fi
+cp "$BIN" "$APP/Contents/MacOS/Ipta"
 cp "$CLI" "$APP/Contents/Helpers/whisper-cli"
-chmod 755 "$APP/Contents/MacOS/Malgyeol" "$APP/Contents/Helpers/whisper-cli"
+chmod 755 "$APP/Contents/MacOS/Ipta" "$APP/Contents/Helpers/whisper-cli"
 
-# Metal shader library is embedded in whisper-cli (GGML_METAL_EMBED_LIBRARY=ON).
-# Helpers/ must contain Mach-O only; loose .metal sources break codesign --verify.
-if ! otool -l "$APP/Contents/Helpers/whisper-cli" | grep -q 'sectname __ggml_metallib'; then
-  echo "whisper-cli does not embed Metal shaders; refusing to ship loose .metal in Helpers" >&2
-  exit 3
+assert_metal() {
+  local bin="$1"
+  local arch="$2"
+  if ! otool -arch "$arch" -l "$bin" | grep -q 'sectname __ggml_metallib'; then
+    echo "whisper-cli $arch does not embed Metal shaders" >&2
+    exit 3
+  fi
+}
+if [[ "$IPTA_ARCH" == "universal" ]]; then
+  assert_metal "$APP/Contents/Helpers/whisper-cli" arm64
+  assert_metal "$APP/Contents/Helpers/whisper-cli" x86_64
+  for need in arm64 x86_64; do
+    lipo -archs "$APP/Contents/MacOS/Ipta" | grep -qw "$need"
+    lipo -archs "$APP/Contents/Helpers/whisper-cli" | grep -qw "$need"
+  done
+else
+  assert_metal "$APP/Contents/Helpers/whisper-cli" "$IPTA_ARCH"
+  lipo -archs "$APP/Contents/MacOS/Ipta" | grep -qw "$IPTA_ARCH"
 fi
 
-# Drop build-machine toolchain rpaths (e.g. /Applications/Xcode-*.app/.../swift-6.2). /usr/lib/swift stays.
+# Drop build-machine toolchain rpaths. /usr/lib/swift stays.
 while IFS= read -r rp; do
   log "delete rpath $rp"
-  install_name_tool -delete_rpath "$rp" "$APP/Contents/MacOS/Malgyeol"
-done < <(otool -l "$APP/Contents/MacOS/Malgyeol" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | grep -E '^/Applications/Xcode|/Developer/Toolchains|/opt/homebrew|/usr/local|^/Users/' || true)
+  install_name_tool -delete_rpath "$rp" "$APP/Contents/MacOS/Ipta"
+done < <(otool -arch all -l "$APP/Contents/MacOS/Ipta" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | grep -E '^/Applications/Xcode|/Developer/Toolchains|/opt/homebrew|/usr/local|^/Users/' | sort -u || true)
 
-for bin in "$APP/Contents/MacOS/Malgyeol" "$APP/Contents/Helpers/whisper-cli"; do
-  if otool -l "$bin" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | grep -E '^/Applications/Xcode|/Developer/Toolchains|/opt/homebrew|/usr/local|^/Users/'; then
+for bin in "$APP/Contents/MacOS/Ipta" "$APP/Contents/Helpers/whisper-cli"; do
+  if otool -arch all -l "$bin" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | grep -E '^/Applications/Xcode|/Developer/Toolchains|/opt/homebrew|/usr/local|^/Users/'; then
     echo "forbidden rpath in $bin" >&2
     exit 2
   fi
-  if otool -L "$bin" | awk 'NR>1' | grep -E '/opt/homebrew|/usr/local|/Users/'; then
+  if otool -arch all -L "$bin" | awk '/^\t/ {print $1}' | grep -E '/opt/homebrew|/usr/local|^/Users/'; then
     echo "forbidden path in $bin" >&2
-    otool -L "$bin" >&2
+    otool -arch all -L "$bin" >&2
     exit 2
   fi
 done
 
 IDENTITIES_FILE="$OUT/codesign-identities.txt"
 security find-identity -v -p codesigning > "$IDENTITIES_FILE"
-VALID_IDS="$(grep -c 'valid identities found' "$IDENTITIES_FILE" || true)"
-# The summary line is like "     0 valid identities found"
 ID_COUNT="$(awk '/valid identities found/ {print $1}' "$IDENTITIES_FILE" | tail -1)"
 ID_COUNT="${ID_COUNT:-0}"
 SIGNING_KIND="adhoc"
@@ -116,11 +173,11 @@ fi
 log "codesign identities count=$ID_COUNT (keys not printed)"
 log "signing=$SIGNING_KIND notarized=$NOTARIZED"
 
-# All bundle resources must exist BEFORE signing, or the resource seal breaks.
 printf '%s\n' "$WHISPER_HEAD" > "$APP/Contents/Resources/whisper-commit.txt"
 printf '%s\n' "$PIN_WHISPER" > "$APP/Contents/Resources/whisper-ref.txt"
 printf '%s\n' "$SIGNING_KIND" > "$APP/Contents/Resources/signing.txt"
 printf '%s\n' "$NOTARIZED" > "$APP/Contents/Resources/notarized.txt"
+printf '%s\n' "$IPTA_ARCH" > "$APP/Contents/Resources/arch.txt"
 
 sign_macho() {
   local f="$1"
@@ -138,17 +195,18 @@ while IFS= read -r f; do
 done < <(find "$APP/Contents/Helpers" -type f)
 
 codesign --force --sign - --timestamp=none \
-  --identifier app.malgyeol.Malgyeol \
+  --identifier app.ipta.Ipta \
   --entitlements "$ROOT/App/Malgyeol.entitlements" \
   "$APP"
 
 codesign --verify --verbose=2 "$APP"
 codesign --verify --verbose=2 "$APP/Contents/Helpers/whisper-cli"
-codesign --verify --verbose=2 "$APP/Contents/MacOS/Malgyeol"
+codesign --verify --verbose=2 "$APP/Contents/MacOS/Ipta"
 
 {
   echo "signing=$SIGNING_KIND"
   echo "notarized=$NOTARIZED"
+  echo "arch=$IPTA_ARCH"
   echo "valid_identities=$ID_COUNT"
   echo "developer_id_usable=no"
   echo "reason=no valid codesigning identity in keychain; ad-hoc only. Not notarized."
@@ -156,13 +214,15 @@ codesign --verify --verbose=2 "$APP/Contents/MacOS/Malgyeol"
   cat "$IDENTITIES_FILE"
   echo "--- codesign -dv --verbose=4 (app) ---"
   codesign -dv --verbose=4 "$APP" 2>&1 || true
+  echo "--- lipo ---"
+  lipo -info "$APP/Contents/MacOS/Ipta" || true
+  lipo -info "$APP/Contents/Helpers/whisper-cli" || true
 } > "$OUT/codesign-report.txt"
 
-# Post-sign check: a copy elsewhere must still verify (catches resources written after signing).
 VERIFY_COPY="$(mktemp -d)/Malgyeol.app"
 cp -R "$APP" "$VERIFY_COPY"
 codesign --verify --deep --strict --verbose=2 "$VERIFY_COPY"
 rm -rf "$(dirname "$VERIFY_COPY")"
 
 log "app=$APP"
-log "signing=$SIGNING_KIND notarized=$NOTARIZED"
+log "arch=$IPTA_ARCH signing=$SIGNING_KIND notarized=$NOTARIZED"

@@ -5,7 +5,7 @@ enum MalgyeolInfo {
     static let productKo = "입타"
     static let productEn = "Ipta"
     static let label = "입타"
-    static let bundleId = "app.malgyeol.Malgyeol"
+    static let bundleId = "app.ipta.Ipta"
     static let maxSeconds: Double = 60
     static let modelName = "ggml-small.bin"
     static let modelURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin")!

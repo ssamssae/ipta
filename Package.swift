@@ -20,7 +20,11 @@ let package = Package(
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("Carbon"),
                 .linkedFramework("CoreGraphics"),
-                .linkedFramework("FoundationModels"),
+                // Intel Mac / older macOS may not have FoundationModels. Weak so the app still launches.
+                .unsafeFlags([
+                    "-Xlinker", "-weak_framework",
+                    "-Xlinker", "FoundationModels",
+                ]),
                 .linkedFramework("Security"),
                 .linkedFramework("IOKit"),
             ]

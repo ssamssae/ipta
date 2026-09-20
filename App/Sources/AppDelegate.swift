@@ -1,12 +1,15 @@
 import AppKit
 import Carbon
+import Combine
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let state = AppState()
     private var statusItem: NSStatusItem?
-    private var panel: NSPanel?
+    private var panel: NSWindow?
+    private var settingsWindow: NSWindow?
+    private var bags = Set<AnyCancellable>()
     private var hotkeys: HotKeyCenter?
     private var micButtons: MicButtonCenter?
     private var menu: NSMenu?
@@ -15,8 +18,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         state.refreshPermissions()
+        setupMainMenu()
         setupStatusItem()
         setupPanel()
+        setupSettingsWindow()
+        state.$showSettings
+            .receive(on: RunLoop.main)
+            .sink { [weak self] show in
+                if show {
+                    self?.showSettingsWindow()
+                } else {
+                    self?.settingsWindow?.orderOut(nil)
+                }
+            }
+            .store(in: &bags)
         hotkeys = HotKeyCenter(toggle: state.toggleKey, cancel: state.cancelKey) { [weak self] action in
             guard let self else { return }
             switch action {
@@ -51,6 +66,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            if HotKeySpec.isCommandQ(event) {
+                self.quit()
+                return nil
+            }
             if self.state.capturingMicButton {
                 if event.keyCode == UInt16(kVK_Escape) {
                     self.state.cancelMicButtonCapture()
@@ -86,6 +105,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !state.axTrusted {
             _ = Paster.promptTrust()
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPanel()
+        return true
+    }
+
+    func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        showPanel()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    private func setupMainMenu() {
+        let appMenu = NSMenu()
+        let quitItem = NSMenuItem(title: "입타 종료", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        appMenu.addItem(quitItem)
+        let appItem = NSMenuItem()
+        appItem.submenu = appMenu
+        let main = NSMenu()
+        main.addItem(appItem)
+        NSApp.mainMenu = main
     }
 
     private func setupStatusItem() {
@@ -125,9 +170,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPanel() {
         let view = NSHostingView(rootView: ResultView(state: state))
         view.frame = NSRect(x: 0, y: 0, width: 400, height: 520)
-        let panel = NSPanel(
+        let panel = NSWindow(
             contentRect: view.frame,
-            styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -137,15 +182,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.minSize = NSSize(width: 320, height: 280)
+        panel.delegate = self
         self.panel = panel
-        panel.orderFrontRegardless()
+        showPanel()
+    }
+
+    private func setupSettingsWindow() {
+        let view = NSHostingView(rootView: SettingsView(state: state))
+        view.frame = NSRect(x: 0, y: 0, width: 440, height: 640)
+        let win = NSWindow(
+            contentRect: view.frame,
+            styleMask: Self.settingsStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+        win.title = "입타 설정"
+        win.contentView = view
+        win.isReleasedWhenClosed = false
+        win.level = .normal
+        win.hidesOnDeactivate = false
+        win.isMovable = true
+        win.isMovableByWindowBackground = true
+        win.titleVisibility = .visible
+        win.titlebarAppearsTransparent = false
+        win.minSize = NSSize(width: 420, height: 360)
+        win.delegate = self
+        settingsWindow = win
     }
 
     @objc func showPanel() {
+        NSApp.setActivationPolicy(.regular)
         panel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         state.refreshPermissions()
     }
+
+    private func showSettingsWindow() {
+        NSApp.setActivationPolicy(.regular)
+        if settingsWindow == nil {
+            setupSettingsWindow()
+        }
+        if let settings = settingsWindow {
+            if let main = panel {
+                var frame = settings.frame
+                frame.origin.x = main.frame.maxX + 20
+                frame.origin.y = main.frame.maxY - frame.height
+                settings.setFrame(frame, display: false)
+            }
+            settings.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        state.refreshPermissions()
+        state.refreshOAuthStatus()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if notification.object as? NSObject === settingsWindow {
+            state.showSettings = false
+            if panel?.isVisible != true {
+                NSApp.setActivationPolicy(.accessory)
+            }
+            return
+        }
+        if settingsWindow?.isVisible != true {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    static let settingsStyleMask: NSWindow.StyleMask = [.titled, .closable, .resizable, .miniaturizable]
 
     @objc func toggle() { state.toggle(fromHotkey: false) }
     @objc func cancel() { state.cancel() }

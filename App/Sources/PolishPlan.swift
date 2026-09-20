@@ -8,8 +8,8 @@ enum PolishTier: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .free: return "무료 — 이 맥에서만"
-        case .connected: return "연결 — 내 모델로 다듬기"
+        case .free: return "이 맥에서만"
+        case .connected: return "바깥 머리"
         }
     }
 }
@@ -45,7 +45,7 @@ enum PolishProvider: String, CaseIterable, Identifiable {
         case .grok: return "그록"
         case .openai: return "코덱스"
         case .cursor: return "커서"
-        case .local: return "이 맥 로컬"
+        case .local: return "이 맥에 있는 모델"
         }
     }
 
@@ -74,7 +74,45 @@ enum PolishProvider: String, CaseIterable, Identifiable {
         }
     }
 
+    var hint: String {
+        switch self {
+        case .apple: return "이 맥의 애플 지능으로 군더더기만 뺍니다. 글은 밖으로 안 나갑니다."
+        case .claude: return "클로드를 이 맥에 이미 켜 둔 뒤, 로그인 버튼을 누르면 브라우저가 열립니다. 본인 계정으로 로그인하면 자동으로 붙습니다."
+        case .grok: return "그록을 이 맥에 이미 켜 둔 뒤, 로그인 버튼을 누르면 브라우저가 열립니다. 본인 계정으로 로그인하면 자동으로 붙습니다."
+        case .openai: return "코덱스를 이 맥에 이미 켜 둔 뒤, 로그인 버튼을 누르면 브라우저가 열립니다. 본인 계정으로 로그인하면 자동으로 붙습니다."
+        case .cursor: return "커서를 이 맥에 이미 켜 둔 뒤, 로그인 버튼을 누르면 브라우저가 열립니다. 본인 계정으로 로그인하면 자동으로 붙습니다."
+        case .local: return "이 맥 LM Studio에 켜 둔 모델로 다듬습니다. 글은 이 맥에만 있습니다."
+        }
+    }
+
+    static var outsideBrainGuide: String {
+        "받아 적기는 입타만으로 됩니다. 그록·커서·클로드·코덱스로 다듬으려면 그 프로그램을 이 맥에 먼저 두고, 본인 계정으로 로그인하세요. 요금은 그 계정으로 나갑니다."
+    }
+
+    var missingProgramNote: String {
+        "이 맥에 \(title) 프로그램이 없습니다. \(title)을 이 맥에 깐 다음, 받는 곳 버튼으로 안내를 보고 다시 고르세요."
+    }
+
+    var installURL: URL? {
+        switch self {
+        case .claude: return URL(string: "https://code.claude.com/docs/en/overview")
+        case .grok: return URL(string: "https://grok.x.ai")
+        case .openai: return URL(string: "https://github.com/openai/codex")
+        case .cursor: return URL(string: "https://cursor.com/docs/cli/overview")
+        case .apple, .local: return nil
+        }
+    }
+
     var hasLocalModelPicker: Bool { self == .local }
+
+    static func visible(for tier: PolishTier, localAvailable: Bool = LocalStudio.isInstalled) -> [PolishProvider] {
+        let base: [PolishProvider]
+        switch tier {
+        case .free: base = allCases.filter { !$0.sendsOffDevice }
+        case .connected: base = Array(allCases)
+        }
+        return localAvailable ? base : base.filter { $0 != .local }
+    }
 
     var requestTimeout: TimeInterval {
         switch self {
@@ -126,6 +164,41 @@ enum LocalPolishModel: String, CaseIterable, Identifiable {
     static func resolve(_ raw: String) -> LocalPolishModel {
         LocalPolishModel(rawValue: raw) ?? .twenty
     }
+
+    static func visibleOnThisMac() -> [LocalPolishModel] {
+        allCases.filter(\.isPresent)
+    }
+
+    var isPresent: Bool {
+        switch self {
+        case .twenty: return LocalStudio.hasTwenty
+        case .twentySeven: return LocalStudio.hasTwentySeven
+        }
+    }
+}
+
+enum LocalStudio {
+    static var isInstalled: Bool { hasTwenty || hasTwentySeven }
+
+    static var hasTwenty: Bool {
+        pathExists([
+            ".lmstudio/models/lmstudio-community/gpt-oss-20b-GGUF",
+            ".lmstudio/models/local/gpt-oss-20b",
+        ])
+    }
+
+    static var hasTwentySeven: Bool {
+        pathExists([
+            ".lmstudio/models/mlx-community/Qwen3.8-27B-4bit",
+            ".lmstudio/models/local/qwen3.8-27b",
+        ])
+    }
+
+    private static func pathExists(_ relatives: [String]) -> Bool {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        return relatives.contains { fm.fileExists(atPath: home.appendingPathComponent($0).path) }
+    }
 }
 
 struct PolishPlan: Equatable {
@@ -137,7 +210,13 @@ struct PolishPlan: Equatable {
     static func load() -> PolishPlan {
         let d = UserDefaults.standard
         let tier = PolishTier(rawValue: d.string(forKey: "malgyeol.polish.tier") ?? "") ?? .free
-        let provider = PolishProvider(rawValue: d.string(forKey: "malgyeol.polish.provider") ?? "") ?? .claude
+        var provider = PolishProvider(rawValue: d.string(forKey: "malgyeol.polish.provider") ?? "") ?? .apple
+        if tier == .free, provider.sendsOffDevice {
+            provider = .apple
+        }
+        if provider == .local, !LocalStudio.isInstalled {
+            provider = .apple
+        }
         let stored = d.string(forKey: "malgyeol.polish.model") ?? ""
         let model: String
         if provider == .local {
@@ -148,7 +227,10 @@ struct PolishPlan: Equatable {
         let rawAuth = d.string(forKey: "malgyeol.polish.authMode") ?? ""
         let authMode: PolishAuthMode
         if provider.supportsOAuth {
-            authMode = PolishAuthMode(rawValue: rawAuth) ?? .oauth
+            // 바깥 머리는 로그인 연결이 기본. 예전에 키 칸을 열어 둔 설정도 로그인으로 되돌린다.
+            authMode = rawAuth == PolishAuthMode.key.rawValue && d.bool(forKey: "malgyeol.polish.preferPastedKey")
+                ? .key
+                : .oauth
         } else {
             authMode = .key
         }
@@ -161,6 +243,7 @@ struct PolishPlan: Equatable {
         d.set(provider.rawValue, forKey: "malgyeol.polish.provider")
         d.set(model, forKey: "malgyeol.polish.model")
         d.set(authMode.rawValue, forKey: "malgyeol.polish.authMode")
+        d.set(authMode == .key && provider.supportsOAuth, forKey: "malgyeol.polish.preferPastedKey")
     }
 
     var usesOAuth: Bool {
@@ -176,8 +259,13 @@ struct PolishPlan: Equatable {
     }
 
     var canAttemptModel: Bool {
+        canAttemptModel(localAvailable: LocalStudio.isInstalled)
+    }
+
+    func canAttemptModel(localAvailable: Bool) -> Bool {
+        if provider == .local { return localAvailable }
         switch tier {
-        case .free: return false
+        case .free: return !provider.sendsOffDevice
         case .connected: return true
         }
     }

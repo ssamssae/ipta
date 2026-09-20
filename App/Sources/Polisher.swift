@@ -52,7 +52,7 @@ enum SpeechCleaner {
     }
 
     private static func keepLastIntent(_ s: String) -> String {
-        for sep in [" 아니라 ", " 아니 ", " 말고 "] {
+        for sep in [" 아니라 ", " 아니야 ", " 아냐 ", " 아니 ", " 말고 "] {
             if let r = s.range(of: sep, options: .backwards) {
                 let tail = s[r.upperBound...].trimmingCharacters(in: .whitespaces)
                 if tail.count >= 2 { return String(tail) }
@@ -69,6 +69,31 @@ enum SpeechCleaner {
             out.append(w)
         }
         return out.joined(separator: " ")
+    }
+
+    /// Drop model output that invents names or dishes not in the spoken text.
+    static func keepsSpokenFacts(_ polished: String, source: String) -> Bool {
+        if polished.contains("**") { return false }
+        let compact = source.replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        let novel = hangulRuns(polished).filter { tok in
+            tok.count >= 2 && !compact.contains(tok)
+        }
+        return novel.count < 2
+    }
+
+    private static func hangulRuns(_ s: String) -> [String] {
+        var runs: [String] = []
+        var cur = ""
+        for ch in s {
+            if ("가"..."힣").contains(ch) {
+                cur.append(ch)
+            } else if !cur.isEmpty {
+                runs.append(cur)
+                cur = ""
+            }
+        }
+        if !cur.isEmpty { runs.append(cur) }
+        return runs
     }
 }
 
@@ -135,7 +160,8 @@ final class Polisher: @unchecked Sendable {
     private static let polishInstructions = """
     받아적은 말을 글로 다듬는다. 의미와 고유명사는 유지한다.
     음, 어, 그니까 같은 군더더기는 뺀다. 중간에 고친 말은 마지막 의도만 남긴다.
-    같은 말 반복은 한 번만. 목록이면 줄을 나눈다. 새 사실은 만들지 않는다.
+    같은 말 반복은 한 번만. 목록이면 줄을 나눈다.
+    새 음식, 장소, 사람, 이유를 만들지 않는다. 추천하거나 질문으로 바꾸지 않는다.
     설명 없이 다듬은 문장만 출력한다.
     """
 
@@ -216,7 +242,8 @@ final class Polisher: @unchecked Sendable {
             t = String(t.dropFirst().dropLast())
         }
         if t.isEmpty { return nil }
-        if t.count > max(source.count * 4, 80) { return nil }
+        if t.count > max(source.count * 2, 40) { return nil }
+        if !SpeechCleaner.keepsSpokenFacts(t, source: source) { return nil }
         return t
     }
 

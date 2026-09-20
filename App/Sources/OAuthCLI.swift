@@ -48,45 +48,127 @@ enum OAuthCLI {
         return nil
     }
 
-    static func probe(_ provider: PolishProvider) -> (ready: Bool, note: String) {
+    struct Probe {
+        var ready: Bool
+        var blocked: Bool
+        var note: String
+    }
+
+    static func probe(_ provider: PolishProvider) -> Probe {
         guard provider.supportsOAuth else {
-            return (false, "이 모델은 이 맥 로그인을 쓰지 않습니다")
+            return Probe(ready: false, blocked: true, note: "이 모델은 이 맥 로그인을 쓰지 않습니다")
         }
         guard let bin = binary(for: provider) else {
-            return (false, "이 맥에 \(provider.title) 프로그램이 없습니다")
+            return Probe(ready: false, blocked: true, note: provider.missingProgramNote)
         }
         switch provider {
         case .claude:
             let out = run(bin, ["auth", "status", "--json"], timeout: 5).combined
+            if keychainLocked(out) {
+                return Probe(ready: false, blocked: true, note: keychainNote(for: .claude))
+            }
             if out.contains("\"loggedIn\": true") {
-                return (true, "이 맥에 클로드 로그인 있음")
+                return Probe(ready: true, blocked: false, note: "이 맥 클로드에 이미 붙어 있습니다")
             }
             if out.contains("loggedIn") {
-                return (false, "클로드 로그인이 없거나 만료됨. 터미널에서 claude login")
+                return Probe(ready: false, blocked: false, note: "아직 클로드에 안 붙어 있습니다. 로그인 버튼을 누르면 브라우저가 열립니다")
             }
-            return (false, "클로드 로그인을 확인하지 못했습니다")
+            return Probe(ready: false, blocked: false, note: "클로드 로그인을 확인하지 못했습니다")
         case .openai:
             let out = run(bin, ["login", "status"], timeout: 5).combined
-            if out.localizedCaseInsensitiveContains("logged in") {
-                return (true, "이 맥에 코덱스 로그인 있음")
+            if keychainLocked(out) {
+                return Probe(ready: false, blocked: true, note: keychainNote(for: .openai))
             }
-            return (false, "코덱스 로그인이 없습니다. 터미널에서 codex login")
+            let lower = out.lowercased()
+            if lower.contains("not logged in") || lower.contains("logged out") {
+                return Probe(ready: false, blocked: false, note: "아직 코덱스에 안 붙어 있습니다. 로그인 버튼을 누르면 브라우저가 열립니다")
+            }
+            if lower.contains("logged in") {
+                return Probe(ready: true, blocked: false, note: "이 맥 코덱스에 이미 붙어 있습니다")
+            }
+            return Probe(ready: false, blocked: false, note: "아직 코덱스에 안 붙어 있습니다. 로그인 버튼을 누르면 브라우저가 열립니다")
         case .grok:
             let auth = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".grok/auth.json")
             if FileManager.default.fileExists(atPath: auth.path) {
-                return (true, "이 맥에 그록 로그인 파일 있음")
+                return Probe(ready: true, blocked: false, note: "이 맥 그록에 이미 붙어 있습니다")
             }
-            return (false, "그록 로그인이 없습니다. 터미널에서 grok login")
+            return Probe(ready: false, blocked: false, note: "아직 그록에 안 붙어 있습니다. 로그인 버튼을 누르면 브라우저가 열립니다")
         case .cursor:
-            let out = run(bin, ["status"], timeout: 6).combined
-            if out.localizedCaseInsensitiveContains("logged in") {
-                return (true, "이 맥에 커서 로그인 있음")
-            }
-            return (false, "커서 로그인이 없습니다. 터미널에서 agent login")
+            let out = run(bin, ["status", "--format", "json"], timeout: 6).combined
+            return parseCursorStatus(out)
         case .apple, .local:
-            return (false, "")
+            return Probe(ready: false, blocked: true, note: "")
         }
+    }
+
+    static func parseCursorStatus(_ raw: String) -> Probe {
+        if keychainLocked(raw) {
+            return Probe(ready: false, blocked: true, note: keychainNote(for: .cursor))
+        }
+        if let data = raw.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let auth = obj["isAuthenticated"] as? Bool {
+            if auth {
+                return Probe(ready: true, blocked: false, note: "이 맥 커서에 이미 붙어 있습니다")
+            }
+            return Probe(ready: false, blocked: false, note: "아직 커서에 안 붙어 있습니다. 로그인 버튼을 누르면 브라우저가 열립니다")
+        }
+        let lower = raw.lowercased()
+        if lower.contains("not logged in") || lower.contains("logged out") {
+            return Probe(ready: false, blocked: false, note: "아직 커서에 안 붙어 있습니다. 로그인 버튼을 누르면 브라우저가 열립니다")
+        }
+        if lower.contains("logged in") {
+            return Probe(ready: true, blocked: false, note: "이 맥 커서에 이미 붙어 있습니다")
+        }
+        return Probe(ready: false, blocked: false, note: "커서 로그인을 확인하지 못했습니다")
+    }
+
+    private static func keychainLocked(_ raw: String) -> Bool {
+        let lower = raw.lowercased()
+        return lower.contains("keychain is locked") || lower.contains("unlock-keychain")
+    }
+
+    private static func keychainNote(for provider: PolishProvider) -> String {
+        "이 맥 열쇠묶음이 잠겨 \(provider.title) 로그인을 못 봅니다. 입타를 독이나 응용 프로그램에서 다시 열어 주세요"
+    }
+
+    static func loginArguments(for provider: PolishProvider) -> [String] {
+        switch provider {
+        case .grok: return ["login", "--oauth"]
+        case .cursor, .claude, .openai: return ["login"]
+        case .apple, .local: return []
+        }
+    }
+
+    /// Opens the official login UI (browser). Does not wait for the person to finish.
+    @discardableResult
+    static func startLogin(_ provider: PolishProvider) -> String {
+        guard provider.supportsOAuth else {
+            return "이 모델은 로그인 창이 없습니다"
+        }
+        guard let bin = binary(for: provider) else {
+            return provider.missingProgramNote
+        }
+        let args = loginArguments(for: provider)
+        guard !args.isEmpty else { return "로그인 명령을 모릅니다" }
+        let proc = Process()
+        proc.executableURL = bin
+        proc.arguments = args
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: "NO_OPEN_BROWSER")
+        let extra = searchDirectories().map(\.path).joined(separator: ":")
+        env["PATH"] = extra + ":" + (env["PATH"] ?? "/usr/bin:/bin")
+        proc.environment = env
+        proc.standardInput = FileHandle.nullDevice
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+        } catch {
+            return "\(provider.title) 로그인 창을 열지 못했습니다"
+        }
+        return "\(provider.title) 로그인 창을 열었습니다"
     }
 
     static func polish(provider: PolishProvider, instructions: String, user: String, key: String = "") -> String? {

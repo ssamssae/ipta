@@ -21,6 +21,14 @@ struct HotKeySpec: Equatable {
         return s
     }
 
+    static func isCommandQ(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, event.keyCode == UInt16(kVK_ANSI_Q) else { return false }
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return mods.contains(.command)
+            && !mods.contains(.option)
+            && !mods.contains(.control)
+    }
+
     static func from(event: NSEvent) -> HotKeySpec? {
         if event.keyCode == UInt16(kVK_Escape) { return nil }
         var mods: UInt32 = 0
