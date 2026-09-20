@@ -1,0 +1,41 @@
+name: Windows release build
+on:
+  pull_request:
+    paths: ["windows/**", ".github/workflows/windows-release.yml"]
+  workflow_dispatch:
+env:
+  PYTHONUTF8: "1"
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build bundled transcription engine
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp.git "$env:RUNNER_TEMP/whisper"
+          cmake -S "$env:RUNNER_TEMP/whisper" -B "$env:RUNNER_TEMP/whisper-build" -A x64 -DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+          if ($LASTEXITCODE -ne 0) { throw "Configure failed" }
+          cmake --build "$env:RUNNER_TEMP/whisper-build" --config Release --target whisper-cli --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "Whisper build failed" }
+          New-Item -ItemType Directory -Force windows/Helpers | Out-Null
+          Get-ChildItem "$env:RUNNER_TEMP/whisper-build" -Recurse -File | Where-Object { $_.Name -eq "whisper-cli.exe" -or $_.Extension -eq ".dll" } | Copy-Item -Destination windows/Helpers
+      - name: Logic regression tests
+        shell: bash
+        run: bash windows/scripts/test_windows.sh
+      - name: Test and package
+        shell: pwsh
+        run: |
+          python -m pip install -r windows/requirements-windows.txt
+          python -m unittest discover -s windows/tests -p "test_provider_workspace.py"
+          if ($LASTEXITCODE -ne 0) { throw "Workspace tests failed" }
+          ./windows/scripts/build_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ipta-windows
+          path: windows/dist/

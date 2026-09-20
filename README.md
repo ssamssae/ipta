@@ -1,12 +1,14 @@
 # 입타 (Ipta)
 
-맥에서만 한국어를 받아 적는 메뉴바 앱입니다. 말한 소리는 이 맥을 떠나지 않습니다. 파이썬, 홈브루, 위스퍼를 따로 설치할 필요는 없습니다.
+Mac과 Windows에서 한국어를 받아 적는 앱입니다. 받아 적기는 이 컴퓨터에서 처리합니다. 배포 파일에는 실행에 필요한 프로그램이 들어 있습니다.
 
 **지원:** macOS 14 이상. Apple Silicon과 Intel Mac 모두. 받는 파일 하나(`Ipta-*-macos.dmg`)면 됩니다.
 
-**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.20-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
+**Windows 10/11 x64:** `Ipta-0.1.21-windows.exe`를 받아 실행합니다. 별도 Python 설치 없이 사용합니다. 처음에는 받아 적기 모델을 내려받습니다. 자세한 사용법은 [Windows 안내](windows/README.md)를 보세요.
 
-**서명:** Minus Beta Studio 개발자 서명과 애플 공증이 되어 있습니다.
+**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.21-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
+
+**Mac 서명:** Minus Beta Studio 개발자 서명과 애플 공증을 거친 DMG를 배포합니다. Windows EXE는 코드 서명되지 않았습니다.
 
 ## 쓰는 법
 1. 입타를 응용 프로그램 폴더로 복사하거나 DMG에서 실행합니다.
@@ -29,8 +31,14 @@ bash Scripts/check_rpath.sh dist/Malgyeol.app
 bash Scripts/package_dmg.sh
 ```
 
-## 기여
-고쳐서 되돌려 주는 방법은 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다.
-
 ## 라이선스
 앱 소스 MIT. 엔진 whisper.cpp MIT. 모델은 OpenAI Whisper 가중치(MIT)의 ggml 변환본입니다. `THIRD_PARTY_NOTICES.md`.
+
+## 0.1.21 다듬기 변경
+- 그록은 다듬기 전용 지시와 빈 작업 폴더를 사용해 불필요한 프로젝트 로딩을 줄였습니다.
+- 커서는 전용 빈 작업 폴더로 실행해 로그인 후 작업 폴더 신뢰 문제로 실패하던 경우를 고쳤습니다.
+- Windows는 설치된 WSL CLI와 로그인 계정을 우선 사용합니다. 해당 CLI가 WSL에 없으면 Windows 설치본을 찾습니다.
+- Windows에서 느린 AI 응답과 로그인 연결 실패를 구분해 알려주며, 실패해도 원문을 보존합니다.
+- 클로드는 유료 계정이 없어 이번 실측에서 제외했습니다. Apple 기본 다듬기는 기존 경로를 유지합니다.
+
+같은 짧은 문장 실측(환경/서버에 따라 달라짐): Mac 그록 평균 39.8초 → 9.4초, 코덱스 7.4초, 커서 13.8초. Windows/WSL 그록 8.3초, 코덱스 13.7초, 커서 23.5초. 모든 모델이 즉시 응답한다는 의미는 아닙니다.

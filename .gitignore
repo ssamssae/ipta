@@ -5,3 +5,12 @@ Vendor/whisper.cpp/
 .DS_Store
 *.wav
 .swiftpm/
+
+__pycache__/
+*.pyc
+windows/.tmp-support/
+windows/.venv/
+windows/build/
+windows/dist/
+windows/Helpers/
+*.spec
