@@ -180,6 +180,28 @@ enum OAuthCLI {
         \(user)
         """
         var args = arguments(provider: provider, prompt: prompt)
+        var environment: [String: String] = [:]
+        var profileDirectory: URL?
+        defer {
+            if let profileDirectory { try? FileManager.default.removeItem(at: profileDirectory) }
+        }
+        if provider == .grok {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ipta-polish-" + UUID().uuidString)
+            let profile = directory.appendingPathComponent("agent.md")
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                profileDirectory = directory
+                let header = "---\nname: ipta-polish\ndescription: Korean dictation cleanup\ntools: []\n---\n"
+                try (header + instructions).write(to: profile, atomically: true, encoding: .utf8)
+            } catch { return nil }
+            args = ["--agent", profile.path, "-p", user, "--tools", "", "--disable-web-search", "--no-subagents", "--max-turns", "1", "--reasoning-effort", "low", "--output-format", "json"]
+            environment = ["GROK_MEMORY": "0", "GROK_WORKFLOWS": "0"]
+            for vendor in ["CLAUDE", "CURSOR"] {
+                for kind in ["AGENTS", "RULES", "SKILLS", "MCPS", "HOOKS"] {
+                    environment["GROK_\(vendor)_\(kind)_ENABLED"] = "0"
+                }
+            }
+        }
         if provider == .cursor {
             let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
@@ -188,7 +210,17 @@ enum OAuthCLI {
         }
         guard !args.isEmpty else { return nil }
         malgyeolLog("polish oauth provider=\(provider.rawValue) bin=\(bin.lastPathComponent)")
-        let result = run(bin, args, timeout: 90)
+        let started = Date()
+        let result = run(bin, args, timeout: provider == .grok ? 15 : 90, environment: environment)
+        malgyeolLog("polish elapsed=\(String(format: "%.2f", Date().timeIntervalSince(started))) exit=\(result.code)")
+        guard result.code == 0 else { return nil }
+        if provider == .grok {
+            guard let data = result.out.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let text = obj["text"] as? String else { return nil }
+            let cleaned = cleanOutput(text)
+            return cleaned.isEmpty ? nil : cleaned
+        }
         malgyeolLog("polish oauth exit=\(result.code) chars=\(result.out.count)")
         let text = cleanOutput(result.out)
         return text.isEmpty ? nil : text
@@ -212,13 +244,14 @@ enum OAuthCLI {
         return t
     }
 
-    private static func run(_ bin: URL, _ args: [String], timeout: TimeInterval) -> RunResult {
+    private static func run(_ bin: URL, _ args: [String], timeout: TimeInterval, environment: [String: String] = [:]) -> RunResult {
         let proc = Process()
         proc.executableURL = bin
         proc.arguments = args
         var env = ProcessInfo.processInfo.environment
         let extra = searchDirectories().map(\.path).joined(separator: ":")
         env["PATH"] = extra + ":" + (env["PATH"] ?? "/usr/bin:/bin")
+        env.merge(environment) { _, replacement in replacement }
         proc.environment = env
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("malgyeol-oauth", isDirectory: true)
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)

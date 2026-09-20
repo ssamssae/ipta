@@ -132,7 +132,7 @@ final class Polisher: @unchecked Sendable {
                     completion(PolishResult(text: text, note: "고른 글을 \(plan.provider.title)로 다듬었습니다", usedModel: true))
                     return
                 }
-                completion(PolishResult(text: raw, note: "요약 모델을 쓰지 못했습니다. 로그인이나 키를 확인하세요", usedModel: false, skipPaste: true))
+                completion(PolishResult(text: raw, note: "요약 모델의 응답을 받지 못했습니다. AI 연결 상태를 확인하세요", usedModel: false, skipPaste: true))
                 return
             }
 
@@ -145,7 +145,7 @@ final class Polisher: @unchecked Sendable {
             let fallback = cleaned.isEmpty ? raw : cleaned
             let note: String
             if plan.usesOAuth {
-                note = "이 맥 로그인을 쓰지 못해 기본 다듬기만 했습니다"
+                note = "AI 응답 지연 또는 연결 실패로 기본 다듬기만 했습니다. 맥 로그인 문제는 아닙니다"
             } else if plan.needsPastedKey && !KeychainBox.hasKey(plan.provider) {
                 note = "키가 없어 기본 다듬기만 했습니다"
             } else if cleaned == raw {
