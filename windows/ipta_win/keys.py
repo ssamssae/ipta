@@ -12,9 +12,9 @@ def _path(provider: str) -> Path:
 
 
 def set_key(provider: str, value: str) -> None:
-    delete_key(provider)
     trimmed = value.strip()
     if not trimmed:
+        delete_key(provider)
         return
     path = _path(provider)
     data = trimmed.encode("utf-8")
@@ -59,7 +59,7 @@ def _protect(data: bytes) -> bytes:
     blob_in = DATA_BLOB(len(data), ctypes.create_string_buffer(data, len(data)))
     blob_out = DATA_BLOB()
     if not crypt32.CryptProtectData(ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)):
-        return data
+        raise OSError("Windows key encryption failed")
     try:
         return ctypes.string_at(blob_out.pbData, blob_out.cbData)
     finally:

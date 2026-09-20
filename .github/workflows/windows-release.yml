@@ -3,6 +3,8 @@ on:
   pull_request:
     paths: ["windows/**", ".github/workflows/windows-release.yml"]
   workflow_dispatch:
+env:
+  PYTHONUTF8: "1"
 permissions:
   contents: read
 jobs:

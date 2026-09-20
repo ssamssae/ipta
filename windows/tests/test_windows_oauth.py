@@ -19,9 +19,9 @@ def main() -> int:
     failed += check("json not ready", (not not_ready.ready) and not not_ready.blocked)
     locked = oauth.parse_cursor_status("Error: Your macOS login keychain is locked.\nRun security unlock-keychain")
     failed += check("locked is blocked", locked.blocked and not locked.ready)
-    home = Path("/tmp/ipta-oauth-home-none")
-    home.mkdir(exist_ok=True)
-    probe = oauth.probe("local", home=home)
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="ipta-oauth-test-") as directory:
+        probe = oauth.probe("local", home=Path(directory))
     failed += check("local oauth blocked", probe.blocked)
     failed += check("cursor install url", polish.INSTALL_URLS["cursor"].startswith("https://cursor.com"))
     failed += check("login args grok oauth", oauth.LOGIN_ARGS["grok"] == ["login", "--oauth"])
