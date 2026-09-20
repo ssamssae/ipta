@@ -29,5 +29,8 @@ bash Scripts/check_rpath.sh dist/Malgyeol.app
 bash Scripts/package_dmg.sh
 ```
 
+## 기여
+고쳐서 되돌려 주는 방법은 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다.
+
 ## 라이선스
 앱 소스 MIT. 엔진 whisper.cpp MIT. 모델은 OpenAI Whisper 가중치(MIT)의 ggml 변환본입니다. `THIRD_PARTY_NOTICES.md`.
