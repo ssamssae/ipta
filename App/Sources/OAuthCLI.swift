@@ -203,6 +203,13 @@ enum OAuthCLI {
             }
         }
         if provider == .cursor {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ipta-cursor-" + UUID().uuidString)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                profileDirectory = directory
+            } catch { return nil }
+            // Only this app-created empty workspace is trusted; never use --force/--yolo.
+            args += ["--workspace", directory.path, "--trust"]
             let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 args.insert(contentsOf: ["--api-key", trimmed], at: 0)
