@@ -16,7 +16,7 @@ if ($TestModel -or $TestAudio) {
     $TestArgs += @("--selftest-model", "`"$TestModel`"", "--selftest-audio", "`"$TestAudio`"")
 }
 $Test = Start-Process -FilePath $Exe -ArgumentList $TestArgs -Wait -PassThru
-if ($Test.ExitCode -ne 0) { throw "Packaged selftest failed: $($Test.ExitCode)" }
 Get-Content $Report
+if ($Test.ExitCode -ne 0) { throw "Packaged selftest failed: $($Test.ExitCode)" }
 (Get-FileHash $Exe -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $Exe -Leaf) | Set-Content "$Exe.sha256"
 Write-Host $Exe

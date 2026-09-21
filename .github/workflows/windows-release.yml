@@ -37,8 +37,7 @@ jobs:
       - name: Transcription fixture
         shell: pwsh
         run: |
-          & "$env:RUNNER_TEMP/whisper/models/download-ggml-model.cmd" tiny.en
-          if ($LASTEXITCODE -ne 0) { throw "Test model download failed" }
+          Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin" -OutFile "$env:RUNNER_TEMP/whisper/models/ggml-tiny.en.bin"
       - name: Logic regression tests
         shell: bash
         run: bash windows/scripts/test_windows.sh
