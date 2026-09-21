@@ -1,4 +1,4 @@
-param([string]$Version = "0.1.21")
+param([string]$Version = "0.1.23", [string]$TestModel = "", [string]$TestAudio = "")
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
@@ -10,8 +10,13 @@ if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 $Exe = Join-Path $Root "dist/Ipta-$Version-windows.exe"
 $Report = Join-Path $Root "dist/selftest.txt"
 $env:IPTA_SUPPORT_DIR = Join-Path $env:TEMP "ipta-package-selftest"
-$Test = Start-Process -FilePath $Exe -ArgumentList @("--selftest-output", "`"$Report`"") -Wait -PassThru
-if ($Test.ExitCode -ne 0) { throw "Packaged selftest failed: $($Test.ExitCode)" }
+$TestArgs = @("--selftest-output", "`"$Report`"")
+if ($TestModel -or $TestAudio) {
+    if (!(Test-Path $TestModel) -or !(Test-Path $TestAudio)) { throw "Both test model and audio are required" }
+    $TestArgs += @("--selftest-model", "`"$TestModel`"", "--selftest-audio", "`"$TestAudio`"")
+}
+$Test = Start-Process -FilePath $Exe -ArgumentList $TestArgs -Wait -PassThru
 Get-Content $Report
+if ($Test.ExitCode -ne 0) { throw "Packaged selftest failed: $($Test.ExitCode)" }
 (Get-FileHash $Exe -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $Exe -Leaf) | Set-Content "$Exe.sha256"
 Write-Host $Exe
