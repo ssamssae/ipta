@@ -19,12 +19,26 @@ jobs:
         shell: pwsh
         run: |
           git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp.git "$env:RUNNER_TEMP/whisper"
-          cmake -S "$env:RUNNER_TEMP/whisper" -B "$env:RUNNER_TEMP/whisper-build" -A x64 -DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
+          # v1.7.5 provides accelerated variants but needs an explicit non-AVX fallback.
+          $CpuCmake = "$env:RUNNER_TEMP/whisper/ggml/src/CMakeLists.txt"
+          $Source = Get-Content $CpuCmake -Raw
+          $Anchor = "    ggml_add_cpu_backend_variant(sandybridge    AVX)"
+          if (!$Source.Contains($Anchor)) { throw "CPU variant anchor missing" }
+          $Source.Replace($Anchor, "    ggml_add_cpu_backend_variant(x64)`n$Anchor") | Set-Content $CpuCmake
+          cmake -S "$env:RUNNER_TEMP/whisper" -B "$env:RUNNER_TEMP/whisper-build" -A x64 -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
           if ($LASTEXITCODE -ne 0) { throw "Configure failed" }
           cmake --build "$env:RUNNER_TEMP/whisper-build" --config Release --target whisper-cli --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "Whisper build failed" }
           New-Item -ItemType Directory -Force windows/Helpers | Out-Null
           Get-ChildItem "$env:RUNNER_TEMP/whisper-build" -Recurse -File | Where-Object { $_.Name -eq "whisper-cli.exe" -or $_.Extension -eq ".dll" } | Copy-Item -Destination windows/Helpers
+          foreach ($Dll in @("ggml-cpu-x64.dll", "ggml-cpu-haswell.dll", "ggml-cpu-alderlake.dll")) {
+            if (!(Test-Path "windows/Helpers/$Dll")) { throw "Missing CPU backend: $Dll" }
+          }
+      - name: Transcription fixture
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP/whisper/models/download-ggml-model.cmd" tiny.en
+          if ($LASTEXITCODE -ne 0) { throw "Test model download failed" }
       - name: Logic regression tests
         shell: bash
         run: bash windows/scripts/test_windows.sh
@@ -34,7 +48,7 @@ jobs:
           python -m pip install -r windows/requirements-windows.txt
           python -m unittest discover -s windows/tests -p "test_provider_workspace.py"
           if ($LASTEXITCODE -ne 0) { throw "Workspace tests failed" }
-          ./windows/scripts/build_windows.ps1
+          ./windows/scripts/build_windows.ps1 -TestModel "$env:RUNNER_TEMP/whisper/models/ggml-tiny.en.bin" -TestAudio "$env:RUNNER_TEMP/whisper/samples/jfk.wav"
       - uses: actions/upload-artifact@v4
         with:
           name: Ipta-windows
