@@ -18,13 +18,7 @@ jobs:
       - name: Build bundled transcription engine
         shell: pwsh
         run: |
-          git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp.git "$env:RUNNER_TEMP/whisper"
-          # v1.7.5 provides accelerated variants but needs an explicit non-AVX fallback.
-          $CpuCmake = "$env:RUNNER_TEMP/whisper/ggml/src/CMakeLists.txt"
-          $Source = Get-Content $CpuCmake -Raw
-          $Anchor = "    ggml_add_cpu_backend_variant(sandybridge    AVX)"
-          if (!$Source.Contains($Anchor)) { throw "CPU variant anchor missing" }
-          $Source.Replace($Anchor, "    ggml_add_cpu_backend_variant(x64)`n$Anchor") | Set-Content $CpuCmake
+          git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git "$env:RUNNER_TEMP/whisper"
           cmake -S "$env:RUNNER_TEMP/whisper" -B "$env:RUNNER_TEMP/whisper-build" -A x64 -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON
           if ($LASTEXITCODE -ne 0) { throw "Configure failed" }
           cmake --build "$env:RUNNER_TEMP/whisper-build" --config Release --target whisper-cli --parallel 4

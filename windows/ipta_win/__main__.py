@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
                     diagnostics = result.stderr.decode("utf-8", errors="replace")
                     accelerated = re.search(r"loaded CPU backend from .*ggml-cpu-(sandybridge|haswell|skylakex|icelake|alderlake)\.dll", diagnostics)
                     ok = result.returncode == 0 and "country" in transcript and bool(accelerated)
-                    print(f"{'PASS' if ok else 'FAIL'} bundled transcription {time.monotonic() - start:.2f}s")
+                    print(f"{'PASS' if ok else 'FAIL'} bundled transcription {time.monotonic() - start:.2f}s exit={result.returncode}")
                     print(diagnostics)
                     return int(not ok)
                 return 0
