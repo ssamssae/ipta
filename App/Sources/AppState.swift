@@ -260,6 +260,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
+            transcriber.prepare()
             recording = true
             phase = .recording
             statusLine = "듣는 중 — 같은 키로 멈춥니다"
