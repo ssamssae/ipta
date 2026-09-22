@@ -31,6 +31,7 @@ struct ResultView: View {
                 statusBlock
                 firstRunBlock
                 resultBlock
+                DictationHistoryView(state: state)
 
                 if !state.lastError.isEmpty {
                     Text(state.lastError)
@@ -180,6 +181,8 @@ struct SettingsView: View {
                 .font(.callout)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            PersonalizationSettingsView(state: state)
 
             GroupBox("마이크") {
                 Picker("장치", selection: Binding(
