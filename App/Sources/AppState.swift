@@ -48,6 +48,14 @@ final class AppState: ObservableObject {
     @Published var oauthBlocked = false
     @Published var oauthWatching = false
 
+    @Published var personalization = Personalization()
+    @Published var writingApps: [AppToneRule] = []
+    private var personalizationReadable = true
+    private var recordingPersonalization = Personalization()
+    private var recordingBundleID = ""
+    private var editingSelection = false
+    private let personalizationStore = PersonalizationStore(directory: MalgyeolInfo.supportDir.appendingPathComponent("Personalization"))
+
     let recorder = Recorder()
     let models = ModelManager()
     let transcriber = Transcriber()
@@ -73,6 +81,11 @@ final class AppState: ObservableObject {
     private let deviceKey = "malgyeol.selectedDeviceId"
 
     init() {
+        do { personalization = try personalizationStore.load() }
+        catch {
+            personalizationReadable = false
+            settingsNotice = "개인화 파일을 읽지 못했습니다. 기존 파일은 보존했습니다."
+        }
         toggleKey = HotKeySpec.load(prefix: "toggle", fallback: .defaultToggle)
         cancelKey = HotKeySpec.load(prefix: "cancel", fallback: .defaultCancel)
         selectedDeviceId = UserDefaults.standard.string(forKey: deviceKey) ?? ""
@@ -224,6 +237,9 @@ final class AppState: ObservableObject {
             wantsAutoPaste = false
             lockedSummary = "창에서 시작 — 자동 붙여넣기 없음"
         }
+        recordingPersonalization = personalization
+        recordingBundleID = lockedTarget?.bundleId ?? ""
+        editingSelection = false
         refreshPermissions()
         if !recorder.hasPermission() {
             phase = .requestingMic
@@ -523,8 +539,16 @@ final class AppState: ObservableObject {
     }
 
     private func finishAfterTranscript(_ text: String, job: UInt64) {
+        editingSelection = SpeechCleaner.command(from: text) == .editSelection
         guard polishEnabled else {
-            transcript = text
+            if editingSelection {
+                transcript = text
+                phase = .idle
+                statusLine = "글 편집은 설정에서 다듬기를 켜고 연결한 뒤 사용할 수 있습니다"
+                wantsAutoPaste = false
+                return
+            }
+            transcript = recordingPersonalization.applyingVocabulary(to: text)
             phase = .idle
             statusLine = "받아 적었습니다"
             finishWithPasteIfNeeded()
@@ -533,13 +557,17 @@ final class AppState: ObservableObject {
         phase = .polishing
         statusLine = "말한 글을 다듬는 중"
         let selected = lockedSelectedText
-        polisher.polish(raw: text, selected: selected, plan: polishPlan) { [weak self] result in
+        polisher.polish(raw: text, selected: selected, plan: polishPlan, personalization: recordingPersonalization, bundleID: recordingBundleID) { [weak self] result in
             Task { @MainActor in
                 guard let self, self.jobs.isCurrent(job) else { return }
                 self.transcript = result.skipPaste ? text : result.text
                 self.phase = .idle
                 self.statusLine = result.note
-                if result.skipPaste { self.wantsAutoPaste = false }
+                if result.skipPaste {
+                    self.wantsAutoPaste = false
+                    self.lastPasteNote = result.note
+                    return
+                }
                 malgyeolLog("polish usedModel=\(result.usedModel) provider=\(self.polishPlan.provider.rawValue) chars=\(result.text.count)")
                 self.finishWithPasteIfNeeded()
             }
@@ -547,6 +575,9 @@ final class AppState: ObservableObject {
     }
 
     private func finishWithPasteIfNeeded() {
+        if personalization.historyEnabled {
+            updatePersonalization { $0.remember(raw: rawTranscript, text: transcript, appName: lockedTarget?.appName ?? "입타") }
+        }
         guard wantsAutoPaste, let locked = lockedTarget else {
             lastPasteNote = "창에서 시작했거나 대상이 없어 자동으로 넣지 않았습니다. 복사를 쓰세요."
             return
@@ -554,6 +585,11 @@ final class AppState: ObservableObject {
         wantsAutoPaste = false
         if !Paster.isTrusted() {
             lastPasteNote = "손쉬운 사용이 꺼져 있습니다. 결과는 보관했습니다."
+            statusLine = lastPasteNote
+            return
+        }
+        if editingSelection && TargetLock.selectedText() != lockedSelectedText {
+            lastPasteNote = "선택한 글이 바뀌어 자동으로 넣지 않았습니다. 결과를 확인하고 복사하세요."
             statusLine = lastPasteNote
             return
         }
@@ -569,6 +605,82 @@ final class AppState: ObservableObject {
         NSPasteboard.general.setString(transcript, forType: .string)
         statusLine = "복사했습니다"
         lastPasteNote = statusLine
+    }
+
+    private func updatePersonalization(_ change: (inout Personalization) throws -> Void) {
+        guard personalizationReadable else {
+            settingsNotice = "기존 개인화 파일을 읽을 수 없어 덮어쓰지 않았습니다."
+            return
+        }
+        do {
+            var updated = personalization
+            try change(&updated)
+            try personalizationStore.save(updated)
+            personalization = updated
+            settingsNotice = "저장했습니다"
+        } catch {
+            settingsNotice = error.localizedDescription
+            lastError = "개인화 저장 실패: " + error.localizedDescription
+        }
+    }
+
+    func addVocabulary(heard: String, spelling: String) {
+        updatePersonalization { try $0.addVocabulary(heard: heard, spelling: spelling) }
+    }
+
+    func removeVocabulary(_ id: UUID) {
+        updatePersonalization { $0.vocabulary.removeAll { $0.id == id } }
+    }
+
+    func refreshWritingApps() {
+        var choices = personalization.tones
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            guard let id = app.bundleIdentifier, id != MalgyeolInfo.bundleId,
+                  !choices.contains(where: { $0.bundleID == id }) else { continue }
+            choices.append(AppToneRule(bundleID: id, name: app.localizedName ?? id, tone: .original))
+        }
+        writingApps = choices.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    func setWritingTone(bundleID: String, tone: WritingTone) {
+        guard let app = writingApps.first(where: { $0.bundleID == bundleID }) else { return }
+        updatePersonalization {
+            $0.tones.removeAll { $0.bundleID == bundleID }
+            if tone != .original, $0.tones.count < 200 {
+                $0.tones.append(AppToneRule(bundleID: bundleID, name: app.name, tone: tone))
+            }
+        }
+    }
+
+    func removeWritingTone(_ bundleID: String) {
+        updatePersonalization { $0.tones.removeAll { $0.bundleID == bundleID } }
+    }
+
+    func setHistoryEnabled(_ enabled: Bool) {
+        updatePersonalization {
+            $0.historyEnabled = enabled
+            if !enabled { $0.history.removeAll() }
+        }
+    }
+
+    func deleteHistory(_ id: UUID? = nil) {
+        updatePersonalization {
+            if let id { $0.history.removeAll { $0.id == id } }
+            else { $0.history.removeAll() }
+        }
+    }
+
+    func restoreHistory(_ record: DictationRecord) {
+        guard phase == .idle || phase == .error else { return }
+        lastError = ""
+        transcript = record.text
+        rawTranscript = record.raw
+        wantsAutoPaste = false
+        lockedTarget = nil
+        lockedSelectedText = ""
+        lockedSummary = "기록에서 복구 — 원하는 곳에 복사해서 넣으세요"
+        lastPasteNote = ""
+        statusLine = "복구했습니다. 복사해서 원하는 칸에 붙여넣으세요."
     }
 
     func downloadModel() {
