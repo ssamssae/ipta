@@ -31,6 +31,7 @@ class AppState:
     download_note: str = ""
     download_progress: float = 0.0
     model_ready: bool = False
+    download_failed: bool = False
     polish_enabled: bool = False
     polish_plan: polish.PolishPlan = field(default_factory=polish.PolishPlan)
     oauth_note: str = ""
@@ -88,7 +89,7 @@ class AppState:
         if self.model_ready:
             self.download_note = "준비됐어요. 말해도 됩니다."
         elif self.phase != "downloading":
-            self.download_note = "아직 준비 안 됐어요. 받기 버튼을 누르세요."
+            self.download_note = "첫 사용에는 인터넷으로 모델 약 465 MiB를 받아야 합니다. 준비 후에는 오프라인으로 받아 적을 수 있습니다."
         foreign = paste.lock_target(self.own_hwnds)
         if foreign:
             self.last_foreign_hwnd = foreign
@@ -167,27 +168,44 @@ class AppState:
         return note
 
     def download_model(self) -> None:
-        if self.phase == "downloading":
+        if self.phase in ("downloading", "recording", "transcribing", "polishing"):
             return
         self.phase = "downloading"
+        self.download_failed = False
+        self.download_progress = 0.0
+        self.last_error = ""
+        self.download_note = "서버에 연결하는 중 · 약 465 MiB · 인터넷 연결이 필요합니다"
         self.status_line = "준비 파일을 받는 중"
         self.notify()
 
         def work() -> None:
+            last_update = 0.0
+
             def progress(written: int, expected: int) -> None:
-                self.download_progress = written / expected if expected else 0
-                self.download_note = f"받는 중 {written / 1_000_000:.0f} / {expected / 1_000_000:.0f} MB"
+                nonlocal last_update
+                now = time.monotonic()
+                if written < expected and now - last_update < 0.1:
+                    return
+                last_update = now
+                self.download_progress = min(written / expected, 1.0) if expected else 0
+                self.download_note = f"{self.download_progress:.0%} · {written / 1048576:.1f} / {expected / 1048576:.1f} MiB"
+                if written == expected:
+                    self.status_line = "다운로드 완료 · 파일 무결성 확인 중"
                 self.notify()
 
             err = models.download(on_progress=progress)
             if err:
                 self.phase = "error"
+                self.download_failed = True
+                self.status_line = "준비 파일을 받지 못했습니다"
                 self.last_error = err
-                self.download_note = err
+                self.download_note = "연결·저장 공간을 확인한 뒤 다시 받을 수 있습니다."
             else:
                 self.phase = "idle"
                 self.model_ready = True
-                self.download_note = "준비됐어요. 말해도 됩니다."
+                self.download_progress = 1.0
+                self.status_line = "준비 완료 · 녹음 버튼을 누르세요"
+                self.download_note = "준비됐어요. 인터넷 없이 받아 적을 수 있습니다."
                 self.last_error = ""
             self.notify()
 
@@ -202,6 +220,10 @@ class AppState:
             self.start()
 
     def cancel(self) -> None:
+        if self.phase == "downloading":
+            self.download_note = "모델 준비 중입니다. 완료 또는 연결 시간 초과까지 기다려 주세요."
+            self.notify()
+            return
         self._job += 1
         self._stop_record = True
         self.recording = False
@@ -211,7 +233,7 @@ class AppState:
 
     def start(self) -> None:
         if not self.model_ready:
-            self.last_error = "아직 준비 안 됐어요. 받기 버튼을 누르세요."
+            self.last_error = "첫 사용에는 인터넷으로 모델 약 465 MiB를 받아야 합니다. 준비 후에는 오프라인으로 받아 적을 수 있습니다."
             self.notify()
             return
         self._job += 1

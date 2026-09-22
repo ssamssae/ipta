@@ -58,3 +58,7 @@ Cursor에서 Grok 4.6 High Fast를 선택한 경우, 일반 받아 적기 다듬
 같은 짧은 문장을 전후 각 3회 교차 측정한 평균은 13.7초 → 12.1초(약 12% 감소)였습니다. 서버 상태에 따른 변동은 있습니다. Codex도 비교했지만 속도 이득이 확인되지 않아 기존 방식을 유지했습니다.
 
 Windows 최신 배포는 [0.1.21](https://github.com/ssamssae/ipta/releases/tag/v0.1.21)입니다.
+
+### Windows 첫 실행·차단 안내
+
+Windows 10/11 x64용 EXE는 코드 서명이 없습니다. SmartScreen 경고가 표시될 수 있으므로 [Windows 실행 안내](windows/README.md#실행-차단-안내-smartscreen--미서명)를 먼저 확인하세요. 첫 사용에는 인터넷으로 모델 약 465 MiB(약 488 MB)를 받으며, 진행률·실패 재시도를 지원합니다. 준비 후 받아 적기는 오프라인으로 사용할 수 있습니다.
