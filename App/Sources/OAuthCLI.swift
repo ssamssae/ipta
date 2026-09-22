@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum OAuthCLI {
     static func binaryNames(for provider: PolishProvider) -> [String] {
@@ -194,7 +195,7 @@ enum OAuthCLI {
                 let header = "---\nname: ipta-polish\ndescription: Korean dictation cleanup\ntools: []\n---\n"
                 try (header + instructions).write(to: profile, atomically: true, encoding: .utf8)
             } catch { return nil }
-            args = ["--agent", profile.path, "-p", user, "--tools", "", "--disable-web-search", "--no-subagents", "--max-turns", "1", "--reasoning-effort", "low", "--output-format", "json"]
+            args = ["--agent", profile.path, "-p", user, "--tools", "", "--disable-web-search", "--no-subagents", "--max-turns", "1", "--reasoning-effort", "low", "--output-format", "streaming-messages-json"]
             environment = ["GROK_MEMORY": "0", "GROK_WORKFLOWS": "0"]
             for vendor in ["CLAUDE", "CURSOR"] {
                 for kind in ["AGENTS", "RULES", "SKILLS", "MCPS", "HOOKS"] {
@@ -237,14 +238,13 @@ enum OAuthCLI {
         guard !args.isEmpty else { return nil }
         malgyeolLog("polish oauth provider=\(provider.rawValue) bin=\(bin.lastPathComponent)")
         let started = Date()
-        let result = run(bin, args, timeout: provider == .grok ? 15 : 90, environment: environment)
+        let result = provider == .grok
+            ? runGrok(bin, args, timeout: 15, environment: environment)
+            : run(bin, args, timeout: 90, environment: environment)
         malgyeolLog("polish elapsed=\(String(format: "%.2f", Date().timeIntervalSince(started))) exit=\(result.code)")
         guard result.code == 0 else { return nil }
         if provider == .grok {
-            guard let data = result.out.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let text = obj["text"] as? String else { return nil }
-            let cleaned = cleanOutput(text)
+            let cleaned = cleanOutput(result.out)
             return cleaned.isEmpty ? nil : cleaned
         }
         malgyeolLog("polish oauth exit=\(result.code) chars=\(result.out.count)")
@@ -273,7 +273,7 @@ enum OAuthCLI {
         return "cursor-grok-4.6-low-fast"
     }
 
-    private struct RunResult {
+    struct RunResult {
         let code: Int32
         let out: String
         let err: String
@@ -289,6 +289,113 @@ enum OAuthCLI {
             t = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return t
+    }
+
+    private final class GrokCompletion: @unchecked Sendable {
+        let ready = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var value: RunResult?
+        func finish(_ result: RunResult) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard value == nil else { return }
+            value = result
+            ready.signal()
+        }
+        func result() -> RunResult {
+            lock.lock()
+            defer { lock.unlock() }
+            return value ?? RunResult(code: 1, out: "", err: "")
+        }
+    }
+
+    /// Only a terminal success event is usable; text/thinking deltas are never pasted.
+    static func grokTerminalResult(_ data: Data) -> RunResult? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["type"] as? String == "result" else { return nil }
+        guard object["subtype"] as? String == "success",
+              object["is_error"] as? Bool == false,
+              object["stop_reason"] as? String == "end_turn",
+              let text = object["result"] as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return RunResult(code: 1, out: "", err: "")
+        }
+        return RunResult(code: 0, out: text, err: "")
+    }
+
+    static func runGrok(_ bin: URL, _ args: [String], timeout: TimeInterval, environment: [String: String] = [:]) -> RunResult {
+        let proc = Process()
+        proc.executableURL = bin
+        proc.arguments = args
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = searchDirectories().map(\.path).joined(separator: ":") + ":" + (env["PATH"] ?? "/usr/bin:/bin")
+        env.merge(environment) { _, replacement in replacement }
+        proc.environment = env
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("malgyeol-oauth", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        proc.currentDirectoryURL = tmp
+        let output = Pipe(), errors = Pipe()
+        proc.standardOutput = output
+        proc.standardError = errors
+        proc.standardInput = FileHandle.nullDevice
+        let started = Date()
+        let completed = GrokCompletion()
+        let readers = DispatchGroup()
+        do { try proc.run() }
+        catch { return RunResult(code: 127, out: "", err: "") }
+        let deadline = DispatchTime.now() + timeout
+        readers.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            defer { try? output.fileHandleForReading.close(); readers.leave() }
+            var pending = Data()
+            var oversized = false
+            while true {
+                let chunk = output.fileHandleForReading.availableData
+                if chunk.isEmpty { break }
+                if oversized { continue }
+                pending.append(chunk)
+                while let newline = pending.firstIndex(of: 10) {
+                    let line = Data(pending[..<newline])
+                    pending.removeSubrange(...newline)
+                    if line.count > 1_048_576 {
+                        oversized = true
+                        completed.finish(RunResult(code: 1, out: "", err: ""))
+                        break
+                    }
+                    if let result = grokTerminalResult(line) { completed.finish(result) }
+                }
+                if pending.count > 1_048_576 {
+                    oversized = true
+                    pending.removeAll()
+                    completed.finish(RunResult(code: 1, out: "", err: ""))
+                }
+            }
+            if !oversized, let result = grokTerminalResult(pending) { completed.finish(result) }
+        }
+        readers.enter()
+        DispatchQueue.global().async {
+            defer { try? errors.fileHandleForReading.close(); readers.leave() }
+            // Drain concurrently, without retaining potentially sensitive diagnostics.
+            while !errors.fileHandleForReading.availableData.isEmpty {}
+        }
+        DispatchQueue.global().async {
+            proc.waitUntilExit()
+            malgyeolLog("polish grok process finished elapsed=\(String(format: "%.2f", Date().timeIntervalSince(started)))")
+            readers.wait()
+            completed.finish(RunResult(code: proc.terminationStatus == 0 ? 1 : proc.terminationStatus, out: "", err: ""))
+        }
+        // Let successful requests finish housekeeping naturally, but bound hung children.
+        DispatchQueue.global().asyncAfter(deadline: deadline) {
+            guard proc.isRunning else { return }
+            proc.terminate()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                if proc.isRunning { kill(proc.processIdentifier, SIGKILL) }
+            }
+        }
+        guard completed.ready.wait(timeout: deadline) == .success else {
+            return RunResult(code: 124, out: "", err: "")
+        }
+        return completed.result()
     }
 
     private static func run(_ bin: URL, _ args: [String], timeout: TimeInterval, environment: [String: String] = [:]) -> RunResult {
