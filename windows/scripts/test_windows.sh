@@ -12,6 +12,8 @@ python3 "$ROOT/tests/test_windows_guide.py"
 python3 "$ROOT/tests/test_windows_hud.py"
 python3 "$ROOT/tests/test_windows_recovery.py"
 python3 "$ROOT/tests/test_provider_workspace.py"
+python3 "$ROOT/tests/test_windows_download.py"
+python3 "$ROOT/tests/test_windows_onboarding_ui.py"
 python3 "$ROOT/tests/test_windows_parity.py"
 python3 "$ROOT/tests/test_windows_personalization_ui.py"
 echo OK

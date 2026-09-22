@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import ssl
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -10,8 +12,8 @@ from . import info
 
 
 def size_looks_ready(path: Path | None = None) -> bool:
-    target = path or info.model_path()
     try:
+        target = path or info.model_path()
         return target.stat().st_size == info.MODEL_BYTES
     except OSError:
         return False
@@ -40,36 +42,41 @@ def download(
 ) -> str | None:
     if not info.url_allowed(url):
         return "모델 주소가 HTTPS 허용 목록이 아닙니다"
-    target = dest or info.model_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if size_looks_ready(target) and verify_hash(target):
-        return None
-    tmp = target.with_suffix(".part")
-    ctx = ssl.create_default_context()
-    req = urllib.request.Request(url, headers={"User-Agent": "Ipta/0.1"})
+    tmp = None
     try:
-        with urllib.request.urlopen(req, context=ctx, timeout=60) as resp:
-            expected = int(resp.headers.get("Content-Length") or info.MODEL_BYTES)
+        target = dest or info.model_path()
+        tmp = target.with_suffix(".part")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if size_looks_ready(target) and verify_hash(target):
+            return None
+        req = urllib.request.Request(url, headers={"User-Agent": "Ipta/0.1"})
+        # The pinned model size is authoritative, including chunked responses.
+        with (opener or urllib.request.urlopen)(req, context=ssl.create_default_context(), timeout=30) as resp:
             written = 0
             with tmp.open("wb") as fh:
                 while True:
                     chunk = resp.read(1024 * 64)
                     if not chunk:
                         break
-                    fh.write(chunk)
                     written += len(chunk)
+                    if written > info.MODEL_BYTES:
+                        return "모델 크기가 예상과 다릅니다. 다시 받기를 눌러 주세요."
+                    fh.write(chunk)
                     if on_progress:
-                        on_progress(written, expected)
-    except OSError as exc:
-        if tmp.exists():
-            tmp.unlink()
-        return f"준비 파일을 받지 못했습니다: {exc}"
-    size = tmp.stat().st_size
-    if size != info.MODEL_BYTES:
-        tmp.unlink()
-        return f"모델 크기 불일치 ({size} ≠ {info.MODEL_BYTES}). 파일을 버렸습니다."
-    if sha256_file(tmp) != info.MODEL_SHA256:
-        tmp.unlink()
-        return "준비 파일이 손상되어 다시 받아야 합니다"
-    tmp.replace(target)
-    return None
+                        on_progress(written, info.MODEL_BYTES)
+        if tmp.stat().st_size != info.MODEL_BYTES:
+            return "다운로드가 끝나기 전에 연결이 끊겼습니다. 인터넷 연결을 확인하고 다시 받기를 눌러 주세요."
+        if sha256_file(tmp) != info.MODEL_SHA256:
+            return "준비 파일이 손상되었습니다. 다시 받기를 눌러 주세요."
+        tmp.replace(target)
+        return None
+    except (urllib.error.URLError, TimeoutError, ConnectionError, ssl.SSLError, http.client.HTTPException):
+        return "모델을 받지 못했습니다. 오프라인이면 인터넷에 연결한 뒤 다시 받기를 눌러 주세요. 첫 다운로드 후에는 인터넷 없이 받아 적을 수 있습니다."
+    except OSError:
+        return "모델을 저장하거나 읽지 못했습니다. 저장 공간과 폴더 권한을 확인하고 다시 받기를 눌러 주세요."
+    finally:
+        try:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
+        except OSError:
+            pass  # A subsequent retry truncates an incomplete file.

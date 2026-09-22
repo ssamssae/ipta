@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable
 
-from . import info, paste, polish, personalization_ui
+from . import info, paste, polish, store, personalization_ui
 from .app import AppState, PHASES
 from .hotkeys import label as hotkey_label
 from .hud import hud_geometry, hud_subtitle, hud_title
@@ -28,10 +28,11 @@ class IptaApp:
         self.state = state
         self.root = tk.Tk()
         self.root.title(info.LABEL)
-        self.root.geometry("380x560")
-        self.root.minsize(340, 480)
+        self.root.geometry("380x650")
+        self.root.minsize(340, 560)
         self.settings: tk.Toplevel | None = None
         self.hud: tk.Toplevel | None = None
+        self.welcome: tk.Toplevel | None = None
         self.personal_window: tk.Toplevel | None = None
         state.on_change = self.refresh
         self._apply_icon()
@@ -39,6 +40,8 @@ class IptaApp:
         self._remember_own_hwnds()
         self.refresh()
         self.root.after(400, self._poll_foreign)
+        if not store.load().get("windows_guide_seen"):
+            self.root.after(100, self.open_start_guide)
 
     def _apply_icon(self) -> None:
         path = info.icon_path()
@@ -65,16 +68,52 @@ class IptaApp:
         self.note.pack(anchor="w", **pad)
         self.err = ttk.Label(self.root, text="", wraplength=340, foreground="#b00020")
         self.err.pack(anchor="w", **pad)
-        self.model_btn = ttk.Button(self.root, text="지금 받기", command=self.state.download_model)
-        self.model_btn.pack(anchor="w", padx=16, pady=4)
+        self.model_box = ttk.Frame(self.root)
+        self.model_box.pack(fill="x", padx=16, pady=4)
+        self.model_progress = ttk.Progressbar(self.model_box, maximum=1.0, mode="determinate")
+        self.model_progress.pack(fill="x", pady=4)
+        self.model_btn = ttk.Button(self.model_box, text="지금 받기 · 약 465 MiB", command=self.state.download_model)
+        self.model_btn.pack(anchor="w")
         ttk.Label(self.root, text="결과", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
         self.result = tk.Text(self.root, height=8, wrap="word")
         self.result.pack(fill="both", expand=True, padx=16, pady=8)
         btns = ttk.Frame(self.root)
         btns.pack(fill="x", padx=16, pady=(0, 16))
+        ttk.Button(btns, text="시작 안내", command=self.open_start_guide).pack(side="left", padx=(0, 8))
         ttk.Button(btns, text="복사", command=lambda: paste.copy_text(self.state.transcript) if self.state.transcript else None).pack(side="left", padx=(0, 8))
         ttk.Button(btns, text="설정", command=self.open_settings).pack(side="left")
         ttk.Button(btns, text="숨기기", command=self.hide).pack(side="left", padx=8)
+
+    def open_start_guide(self) -> None:
+        if self.welcome and self.welcome.winfo_exists():
+            self.welcome.lift()
+            return
+        win = tk.Toplevel(self.root)
+        self.welcome = win
+        win.title("입타 Windows 시작 안내")
+        win.resizable(False, False)
+        ttk.Label(win, text="처음 사용하시나요?", font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=20, pady=(20, 8))
+        for text in (
+            "Windows 10/11 x64용입니다. 이 EXE에는 코드 서명이 없어 Windows가 ‘확인되지 않은 게시자’ 또는 SmartScreen 경고를 표시할 수 있습니다.",
+            "배포처는 github.com/ssamssae/ipta입니다. 받은 파일의 SHA-256을 배포 파일과 비교하세요. 실행 전 차단 안내는 함께 제공되는 Windows-start-guide.html 또는 Windows README에서 볼 수 있습니다.",
+            "SmartScreen에서 출처를 확인하고 신뢰하는 경우에만 ‘추가 정보 → 실행’을 선택하세요. 실행 선택지가 없거나 Smart App Control·조직 정책이 차단하면 관리자에게 문의하세요.",
+            "첫 사용에는 인터넷 연결과 모델 약 465 MiB(약 488 MB)의 저장 공간이 필요합니다. ‘지금 받기’에서 진행률을 확인하고 실패하면 ‘다시 받기’를 누르세요.",
+            "모델 준비 후 받아 적기는 오프라인으로 작동합니다. 온라인 제공자의 다듬기 기능은 별도로 인터넷 연결이 필요합니다.",
+        ):
+            ttk.Label(win, text=text, wraplength=400).pack(anchor="w", padx=20, pady=6)
+
+        def acknowledge() -> None:
+            try:
+                data = store.load()
+                data["windows_guide_seen"] = True
+                store.save(data)
+            except OSError:
+                messagebox.showerror("입타", "설정을 저장하지 못했습니다. 폴더 권한과 저장 공간을 확인해 주세요.", parent=win)
+                return
+            win.destroy()
+
+        ttk.Button(win, text="확인 · 시작하기", command=acknowledge).pack(anchor="e", padx=20, pady=16)
+        self._remember_own_hwnds()
 
     def hide(self) -> None:
         self.root.withdraw()
@@ -188,7 +227,7 @@ class IptaApp:
 
     def _remember_own_hwnds(self) -> None:
         hwnds: list[int] = []
-        for win in (self.root, self.settings, self.hud, self.personal_window):
+        for win in (self.root, self.settings, self.hud, self.welcome, self.personal_window):
             if win is None:
                 continue
             try:
@@ -219,9 +258,18 @@ class IptaApp:
             extra = f"{extra}\n{self.state.last_paste_note}".strip()
         self.note.configure(text=extra)
         self.err.configure(text=self.state.last_error)
+        downloading = self.state.phase == "downloading"
+        self.model_progress.configure(value=self.state.download_progress)
+        self.model_btn.configure(
+            text="준비 중…" if downloading else ("다시 받기" if self.state.download_failed else "지금 받기 · 약 465 MiB"),
+            state="disabled" if downloading else "normal",
+        )
         if self.state.model_ready:
-            self.model_btn.pack_forget()
-        busy = self.state.phase in ("recording", "transcribing", "polishing")
+            self.model_box.pack_forget()
+        elif not self.model_box.winfo_manager():
+            self.model_box.pack(fill="x", padx=16, pady=4, before=self.result)
+        self.toggle_btn.configure(state="disabled" if downloading or not self.state.model_ready else "normal")
+        busy = self.state.phase in ("downloading", "recording", "transcribing", "polishing")
         if not busy:
             self.result.delete("1.0", "end")
             self.result.insert("1.0", self.state.transcript or "아직 없습니다")

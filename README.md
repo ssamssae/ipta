@@ -4,7 +4,7 @@ Mac과 Windows에서 한국어를 받아 적는 앱입니다. 받아 적기는 �
 
 **지원:** macOS 14 이상. Apple Silicon과 Intel Mac 모두. 받는 파일 하나(`Ipta-*-macos.dmg`)면 됩니다.
 
-**Windows 10/11 x64:** `Ipta-0.1.21-windows.exe`를 받아 실행합니다. 별도 Python 설치 없이 사용합니다. 처음에는 받아 적기 모델을 내려받습니다. 자세한 사용법은 [Windows 안내](windows/README.md)를 보세요.
+**Windows 10/11 x64:** `Ipta-VERSION-windows.exe`를 받아 실행합니다. 별도 Python 설치 없이 사용합니다. 처음에는 받아 적기 모델을 내려받습니다. 자세한 사용법은 [Windows 안내](windows/README.md)를 보세요.
 
 **받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.24-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
 
@@ -57,8 +57,11 @@ Cursor에서 Grok 4.6 High Fast를 선택한 경우, 일반 받아 적기 다듬
 
 같은 짧은 문장을 전후 각 3회 교차 측정한 평균은 13.7초 → 12.1초(약 12% 감소)였습니다. 서버 상태에 따른 변동은 있습니다. Codex도 비교했지만 속도 이득이 확인되지 않아 기존 방식을 유지했습니다.
 
-Windows 최신 배포는 [0.1.21](https://github.com/ssamssae/ipta/releases/tag/v0.1.21)입니다.
+Windows 배포는 [Releases](https://github.com/ssamssae/ipta/releases)에서 Windows EXE가 포함된 릴리스를 선택하세요. Mac 전용 릴리스도 있으므로 파일 이름을 확인하세요.
 
+### Windows 첫 실행·차단 안내
+
+Windows 10/11 x64용 EXE는 코드 서명이 없습니다. SmartScreen 경고가 표시될 수 있으므로 [Windows 실행 안내](windows/README.md#실행-차단-안내-smartscreen--미서명)를 먼저 확인하세요. 첫 사용에는 인터넷으로 모델 약 465 MiB(약 488 MB)를 받으며, 진행률·실패 재시도를 지원합니다. 준비 후 받아 적기는 오프라인으로 사용할 수 있습니다.
 ## 0.1.24 Mac 통합 개선
 
 음성 인식 엔진을 미리 준비하고 재사용합니다. 개인 사전·앱별 말투·선택적 기록·선택 글 음성 편집을 포함하며, 설정 화면의 접근성 조회 충돌을 수정했습니다. Grok은 완료된 응답을 받으면 프로세스 정리를 기다리지 않고 결과를 전달합니다. 기존 설정과 모델은 유지됩니다.

@@ -19,4 +19,5 @@ $Test = Start-Process -FilePath $Exe -ArgumentList $TestArgs -Wait -PassThru
 Get-Content $Report
 if ($Test.ExitCode -ne 0) { throw "Packaged selftest failed: $($Test.ExitCode)" }
 (Get-FileHash $Exe -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $Exe -Leaf) | Set-Content "$Exe.sha256"
+Copy-Item (Join-Path $Root "Windows-start-guide.html") (Join-Path $Root "dist/Windows-start-guide.html")
 Write-Host $Exe
