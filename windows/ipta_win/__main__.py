@@ -55,7 +55,20 @@ def main(argv: list[str] | None = None) -> int:
                     ok = result.returncode == 0 and "country" in transcript and bool(accelerated)
                     print(f"{'PASS' if ok else 'FAIL'} bundled transcription {time.monotonic() - start:.2f}s exit={result.returncode}")
                     print(diagnostics)
-                    return int(not ok)
+                    if not ok:
+                        return 1
+                    from ipta_win.warm_engine import WarmEngine
+                    worker = binary.with_name("ipta-transcriber.exe")
+                    engine = WarmEngine(worker, args.selftest_model)
+                    try:
+                        first = engine.transcribe(args.selftest_audio)
+                        pid = engine._proc.pid
+                        second = engine.transcribe(args.selftest_audio)
+                        reused = bool(first and second) and engine._proc.pid == pid
+                        print("PASS bundled warm worker reused" if reused else "FAIL bundled warm worker")
+                        return int(not reused)
+                    finally:
+                        engine.cancel()
                 return 0
     if args.selftest:
         return run_selftest()

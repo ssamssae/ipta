@@ -3,7 +3,7 @@
 Windows 10/11 x64용 한국어 받아 적기 앱입니다. 받아 적기는 이 컴퓨터에서 처리합니다.
 
 ## 설치와 사용
-1. [GitHub Releases](https://github.com/ssamssae/ipta/releases/latest)에서 `Ipta-0.1.21-windows.exe`를 받습니다. Python이나 whisper를 따로 설치하지 않습니다.
+1. [GitHub Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-VERSION-windows.exe`를 받습니다. Python이나 whisper를 따로 설치하지 않습니다.
 2. 아래 **실행 차단 안내**를 확인한 뒤 EXE를 실행합니다. 첫 실행 안내에서 **확인 · 시작하기**를 누르고 **지금 받기**로 모델을 받습니다.
 3. 마이크를 고르고 **Alt+D**로 녹음 시작/정지합니다. **Alt+Shift+C**로 취소합니다.
 4. 결과는 쓰던 입력칸에 붙여 넣습니다. 입력되지 않으면 창의 **복사**를 사용하세요.
@@ -43,3 +43,14 @@ Python 3.12 환경에서 `pip install -r requirements-windows.txt`, `python -m i
 `powershell -File scripts/build_windows.ps1`은 EXE를 만들고 패키지 자체 검사를 실행합니다. GitHub Actions도 같은 스크립트로 빌드합니다. 논리 검사는 `bash windows/scripts/test_windows.sh`로 실행합니다.
 
 WSL 실제 계정의 그록·코덱스·커서 응답을 확인했습니다. 모든 앱/입력칸의 음성 입력 호환성이 검증된 것은 아닙니다. 클로드 실측은 유료 계정 부재로 제외했습니다.
+
+## Windows 0.1.25 통합 개선 (배포 준비)
+
+- 음성 인식 엔진을 미리 준비하고 재사용합니다. 90초간 사용하지 않으면 해제하며, 워커가 실패하면 기존 CLI 방식으로 재시도합니다.
+- Grok은 완료된 성공 응답만 사용하고 프로세스 정리를 기다리지 않고 반환합니다. 부분 출력·실패·잘린 결과는 입력하지 않습니다.
+- 설정의 **개인 사전·앱별 말투·기록·음성 편집**에서 개인화합니다. 사전은 최대 200개이며, 다듬기를 꺼도 적용됩니다. 앱별 말투는 `cursor.exe` 같은 실행 파일명 기준이며 AI 다듬기 연결이 필요합니다.
+- 기록은 기본 꺼짐입니다. 켜면 이 PC에 원문·결과를 최근 50개 저장하고, 끄면 기록을 삭제합니다. 검색 후 결과 복구는 자동으로 입력하지 않습니다.
+- **선택한 글 음성 편집 사용**은 기본 꺼짐입니다. 켠 뒤 지원되는 입력칸에서 글을 선택하고 녹음 단축키로 “존댓말로”, “절반으로 줄여”, “영어로 바꿔”라고 말합니다. 선택한 글이 AI 제공자에게 전달됩니다. Windows UI Automation이 선택을 제공하지 않는 입력칸·비밀번호 필드에서는 동작하지 않습니다. 입력칸·선택 범위·앞부분 내용이 달라졌으면 자동 입력하지 않고 결과에 남깁니다.
+- 개인화 데이터는 `%APPDATA%\Ipta\Personalization\personalization.json`에 저장합니다. 손상된 파일은 덮어쓰지 않습니다. 마이크 음성은 기록 기능에 저장하지 않습니다.
+
+맥 #8의 SwiftUI GroupBox 변경은 Windows Tk에 직접 적용할 대상이 없습니다. 대신 첫 실행·설정·개인화 화면의 실제 Tk 위젯 스모크를 Windows CI에서 검사합니다.
