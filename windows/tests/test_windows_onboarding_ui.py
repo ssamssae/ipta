@@ -43,6 +43,43 @@ class OnboardingSmoke(unittest.TestCase):
         self.app.root.mainloop()
         self.assertIsNone(self.app.welcome)
 
+    def test_settings_wheel_over_child_controls_and_reopen(self):
+        import tkinter as tk
+        from tkinter import ttk
+        for _ in range(2):
+            self.app.open_settings()
+            win = self.app.settings
+            self.app.root.update()
+            self.assertLessEqual(win.winfo_height(), win.winfo_screenheight() - 100)
+            win.geometry('420x360')
+            self.app.root.update()
+            canvas = next(w for w in win.winfo_children() if isinstance(w, tk.Canvas))
+            canvas.yview_moveto(0)
+            self.app.settings_phase.event_generate('<MouseWheel>', delta=-120)
+            self.app.root.update()
+            self.assertGreater(canvas.yview()[0], 0)
+            # Recreated provider controls are tagged as well.
+            self.app._refresh_now()
+            self.app.root.update()
+            child = self.app.provider_frame.winfo_children()[0]
+            self.assertTrue(any(tag.startswith('IptaWheel') for tag in child.bindtags()))
+            canvas.yview_moveto(0)
+            for _ in range(4):
+                child.event_generate('<MouseWheel>', delta=-30)
+            self.app.root.update()
+            self.assertGreater(canvas.yview()[0], 0)
+            for _ in range(80):
+                child.event_generate('<MouseWheel>', delta=-120)
+            self.app.root.update()
+            self.assertAlmostEqual(canvas.yview()[1], 1.0)
+            frame = canvas.nametowidget(canvas.itemcget(canvas.find_all()[0], 'window'))
+            close = next(w for w in frame.winfo_children() if isinstance(w, ttk.Button) and w['text'] == '닫기')
+            self.assertGreaterEqual(close.winfo_rooty(), canvas.winfo_rooty())
+            self.assertLessEqual(close.winfo_rooty() + close.winfo_height(), canvas.winfo_rooty() + canvas.winfo_height())
+            self.assertFalse(any(tag.startswith('IptaWheel') for tag in self.app.toggle_btn.bindtags()))
+            win.destroy()
+            self.app.root.update()
+
     def test_progress_retry_and_ready_controls(self):
         self.state.phase = 'downloading'
         self.state.download_progress = 0.5
