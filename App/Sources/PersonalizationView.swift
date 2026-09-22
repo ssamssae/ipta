@@ -9,7 +9,7 @@ struct PersonalizationSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            GroupBox("개인 용어 사전") {
+            SettingsSection("개인 용어 사전") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("자주 틀리는 표현과 올바른 표기를 등록하세요. 등록한 단어만 바꾸며, 긴 단어의 일부는 바꾸지 않습니다.")
                         .font(.caption).fixedSize(horizontal: false, vertical: true)
@@ -32,7 +32,7 @@ struct PersonalizationSettingsView: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            GroupBox("앱별 말투") {
+            SettingsSection("앱별 말투") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("다듬기를 켰을 때, 녹음을 시작한 앱에 맞춰 적용합니다. 지정하지 않은 앱은 원래 말투를 유지합니다.")
                         .font(.caption).fixedSize(horizontal: false, vertical: true)
@@ -59,7 +59,7 @@ struct PersonalizationSettingsView: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            GroupBox("받아쓰기 기록") {
+            SettingsSection("받아쓰기 기록") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("최근 50개를 이 맥에 저장", isOn: Binding(
                         get: { state.personalization.historyEnabled }, set: { state.setHistoryEnabled($0) }
@@ -74,7 +74,7 @@ struct PersonalizationSettingsView: View {
             if !state.settingsNotice.isEmpty {
                 Text(state.settingsNotice).font(.caption).fixedSize(horizontal: false, vertical: true)
             }
-            GroupBox("글을 선택하고 말로 편집") {
+            SettingsSection("글을 선택하고 말로 편집") {
                 Text("다른 앱에서 글을 선택한 뒤 녹음 단축키를 누르세요. ‘존댓말로’, ‘절반으로 줄여’, ‘영어로 바꿔’라고 말하면 선택한 글을 편집합니다. 다듬기 연결이 필요합니다.")
                     .font(.caption).fixedSize(horizontal: false, vertical: true)
             }
@@ -93,7 +93,7 @@ struct DictationHistoryView: View {
         }
     }
     var body: some View {
-        GroupBox("최근 받아쓰기") {
+        SettingsSection("최근 받아쓰기") {
             VStack(alignment: .leading, spacing: 8) {
                 if !state.personalization.historyEnabled {
                     Text("설정에서 기록 보관을 켜면 이전 결과를 찾아 복구할 수 있습니다.")

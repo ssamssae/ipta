@@ -170,7 +170,7 @@ struct SettingsView: View {
                     .frame(width: 72, height: 24)
             }
 
-            GroupBox("지금 상태") {
+            SettingsSection("지금 상태") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("지금 하는 일: \(state.phase.rawValue)")
                     Text("다른 앱에 바로 넣기: \(state.axTrusted ? "켜짐" : "꺼짐")")
@@ -184,7 +184,7 @@ struct SettingsView: View {
 
             PersonalizationSettingsView(state: state)
 
-            GroupBox("마이크") {
+            SettingsSection("마이크") {
                 Picker("장치", selection: Binding(
                     get: { state.selectedDeviceId },
                     set: { state.setSelectedDevice($0) }
@@ -198,7 +198,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            GroupBox("무선 마이크") {
+            SettingsSection("무선 마이크") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("돌아다니며 쓰려면 여기서 소리 장치와 송신기 버튼을 연결합니다. 한 번 누르면 녹음, 다시 누르면 받아 적어 넣습니다.")
                         .font(.caption)
@@ -227,7 +227,7 @@ struct SettingsView: View {
                 }
             }
 
-            GroupBox("말한 글 다듬기") {
+            SettingsSection("말한 글 다듬기") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(PolishProvider.outsideBrainGuide)
                         .font(.caption)
@@ -334,7 +334,7 @@ struct SettingsView: View {
                 }
             }
 
-            GroupBox("단축키") {
+            SettingsSection("단축키") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(state.hotkeyNote)
                         .fixedSize(horizontal: false, vertical: true)
@@ -380,7 +380,7 @@ struct SettingsView: View {
                 }
             }
 
-            GroupBox("말할 준비") {
+            SettingsSection("말할 준비") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("말을 글로 바꾸려면 처음에 준비 파일을 받아 둬요. 한 번만 받으면 됩니다. 약 465MB이고 이 맥에만 둡니다.")
                         .font(.callout)
