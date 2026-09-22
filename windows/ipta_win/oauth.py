@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import polish
+from .grok_stream import run as run_grok_stream
 from .winhide import CREATE_NO_WINDOW, hidden_kwargs
 
 BINARY_NAMES = {
@@ -386,14 +387,18 @@ def grok_environment() -> dict[str, str]:
 
 
 def polish_grok(instructions: str, user: str, bin_path: Path | None) -> str | None:
-    with tempfile.TemporaryDirectory(prefix="ipta-polish-") as directory:
+    temporary = tempfile.TemporaryDirectory(prefix="ipta-polish-")
+    directory = temporary.name
+    handed_off = False
+    try:
         profile = Path(directory) / "agent.md"
         profile.write_text("---\nname: ipta-polish\ndescription: Korean dictation cleanup\ntools: []\n---\n" + instructions, encoding="utf-8")
-        flags = ["-p", user, "--tools", "", "--disable-web-search", "--no-subagents", "--max-turns", "1", "--reasoning-effort", "low", "--output-format", "json"]
+        flags = ["-p", user, "--tools", "", "--disable-web-search", "--no-subagents", "--max-turns", "1", "--reasoning-effort", "low", "--output-format", "stream-json"]
         env = os.environ.copy()
         env.update(grok_environment())
         if bin_path is not None:
-            raw = run_cli([str(bin_path), "--agent", str(profile), *flags], timeout=GROK_TIMEOUT, raise_errors=True, environment=env, cwd=directory)
+            handed_off = True
+            raw = run_grok_stream([str(bin_path), "--agent", str(profile), *flags], timeout=GROK_TIMEOUT, environment=env, cwd=directory, cleanup=temporary.cleanup)
         else:
             exe = wsl_exe()
             if not exe:
@@ -407,7 +412,8 @@ def polish_grok(instructions: str, user: str, bin_path: Path | None) -> str | No
                 "cd \"$ipta_profile_dir\" && " + " ".join(shlex.quote(a) for a in prefix)
                 + " --agent \"$ipta_profile_dir/agent.md\" " + " ".join(shlex.quote(a) for a in flags)
             )
-            raw = run_cli([exe, "-e", "bash", "-lc", command], timeout=GROK_TIMEOUT + 2, raise_errors=True)
+            handed_off = True
+            raw = run_grok_stream([exe, "-e", "bash", "-lc", command], timeout=GROK_TIMEOUT + 2, cleanup=temporary.cleanup)
         try:
             obj = json.loads(raw or "")
         except (ValueError, TypeError):
@@ -416,6 +422,10 @@ def polish_grok(instructions: str, user: str, bin_path: Path | None) -> str | No
         if not isinstance(text, str):
             raise CliFailure("invalid_output")
         return strip_fences(text) or None
+
+    finally:
+        if not handed_off:
+            temporary.cleanup()
 
 
 def polish_cursor(args: list[str], bin_path: Path | None) -> str | None:

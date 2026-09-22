@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.request import urlopen
 
+from . import personalization, selection
 from . import audio, info, keys, models, oauth, paste, polish, speech, store, transcribe
 
 
@@ -45,6 +46,11 @@ class AppState:
     toggle_hotkey: str = store.DEFAULTS["toggle_hotkey"]
     cancel_hotkey: str = store.DEFAULTS["cancel_hotkey"]
     settings_notice: str = ""
+    personal: personalization.Personalization = field(default_factory=personalization.Personalization)
+    selection_edit_enabled: bool = False
+    target_app: str = ""
+    selected_text: selection.Selection | None = None
+    _selection_ready: threading.Event = field(default_factory=threading.Event)
     last_foreign_hwnd: int = 0
     last_cursor_hwnd: int = 0
     locked_hwnd: int = 0
@@ -64,7 +70,11 @@ class AppState:
         self.toggle_hotkey = str(data.get("toggle_hotkey") or store.DEFAULTS["toggle_hotkey"])
         self.cancel_hotkey = str(data.get("cancel_hotkey") or store.DEFAULTS["cancel_hotkey"])
         self.selected_device_id = str(data.get("selected_device_id") or "")
+        self.personal.load()
+        self.selection_edit_enabled = bool(data.get("selection_edit_enabled"))
+        if self.personal.error: self.last_error = self.personal.error
         self.refresh()
+        if self.model_ready: transcribe.prepare()
 
     def persist(self) -> None:
         data = store.load()
@@ -73,6 +83,7 @@ class AppState:
         data["toggle_hotkey"] = self.toggle_hotkey
         data["cancel_hotkey"] = self.cancel_hotkey
         data["selected_device_id"] = self.selected_device_id
+        data["selection_edit_enabled"] = self.selection_edit_enabled
         store.save(data)
 
     def refresh(self) -> None:
@@ -203,6 +214,7 @@ class AppState:
 
     def cancel(self) -> None:
         self._job += 1
+        transcribe.cancel()
         self._stop_record = True
         self.recording = False
         self.phase = "idle"
@@ -217,6 +229,7 @@ class AppState:
         self._job += 1
         job = self._job
         self._stop_record = False
+        transcribe.prepare()
         self.recording = True
         self.phase = "recording"
         self.elapsed = 0
@@ -234,6 +247,17 @@ class AppState:
             if paste.is_cursor_window(self.locked_hwnd):
                 self.last_cursor_hwnd = self.locked_hwnd
         self.notify()
+
+        self.target_app = paste.process_name(self.locked_hwnd)
+        self.selected_text = None
+        ready = threading.Event()
+        self._selection_ready = ready
+        def capture_selection():
+            try:
+                captured = selection.capture(self.locked_hwnd) if self.selection_edit_enabled else None
+                if self._job == job: self.selected_text = captured
+            finally: ready.set()
+        threading.Thread(target=capture_selection, daemon=True).start()
 
         def work() -> None:
             wav = Path(tempfile.gettempdir()) / f"ipta-{job}.wav"
@@ -294,14 +318,23 @@ class AppState:
             self.notify()
             info.log("done used_model=False chars=0 empty-transcript")
             return
-        self.transcript = raw
+        self._selection_ready.wait(timeout=3.1) if self.selection_edit_enabled else None
+        if self._job != job: return
+        instruction = personalization.edit_instruction(raw) if self.selection_edit_enabled else None
+        if instruction:
+            self.finish_selection_edit(raw, instruction, job)
+            return
+        normalized = self.personal.apply(raw)
+        self.transcript = normalized
         self.notify()
         try:
-            text, note, used_model = self.polish_text(raw)
+            text, note, used_model = self.polish_text(normalized)
         except Exception:
-            text, note, used_model = raw, "다듬기를 건너뛰고 받아 적은 글만 넣었습니다", False
+            text, note, used_model = normalized, "다듬기를 건너뛰고 받아 적은 글만 넣었습니다", False
         if self._job != job:
             return
+        try: self.personal.remember(raw, text, self.target_app)
+        except (OSError, ValueError): self.last_error = "기록을 저장하지 못했습니다. 받아쓰기 결과는 아래에 남아 있습니다."
         self.transcript = text
         self.status_line = note
         self.phase = "idle"
@@ -319,6 +352,44 @@ class AppState:
         self.notify()
         info.log(f"done used_model={used_model} chars={len(text)}")
 
+    def recover_history(self, record_id: str) -> bool:
+        if self.phase not in ("idle", "error"): return False
+        record = next((r for r in self.personal.data['history'] if r['id']==record_id), None)
+        if not record: return False
+        self.transcript, self.raw_transcript = record['text'], record['raw']
+        self.status_line = "이전 결과를 복구했습니다. 복사해서 사용하세요."
+        self.notify()
+        return True
+
+    def finish_selection_edit(self, raw: str, instruction: str, job: int) -> None:
+        snapshot = self.selected_text
+        self.phase = "idle"
+        if not snapshot:
+            self.transcript = ""
+            self.status_line = "선택한 글을 읽지 못했습니다. 지원되는 입력칸에서 글을 선택한 뒤 다시 말해 주세요."
+            self.notify(); return
+        if not self.polish_enabled or not self.polish_plan.can_attempt_model():
+            self.transcript = snapshot.text
+            self.status_line = "선택 글 편집에는 AI 다듬기 연결이 필요합니다. 원문을 유지했습니다."
+            self.notify(); return
+        self.phase, self.status_line = "polishing", "선택한 글을 다듬는 중"
+        self.notify()
+        try: edited = self.model_transform(self.polish_plan, instruction, snapshot.text, editing=True)
+        except Exception: edited = None
+        if self._job != job: return
+        self.phase = "idle"
+        if not edited:
+            self.transcript = snapshot.text
+            self.status_line = "편집에 실패해 선택한 원문을 유지했습니다."
+        else:
+            self.transcript = edited
+            try: inserted = selection.replace_if_unchanged(snapshot, edited)
+            except Exception: inserted = False
+            self.status_line = "선택한 글 교체를 요청했습니다" if inserted else "선택한 글이나 입력칸이 바뀌어 자동 입력하지 않았습니다. 결과를 복사하세요."
+            try: self.personal.remember(snapshot.text, edited, self.target_app)
+            except (OSError, ValueError): self.last_error = "기록 저장 실패"
+        self.notify()
+
     def polish_text(self, raw: str) -> tuple[str, str, bool]:
         cleaned = speech.clean(raw)
         if not self.polish_enabled:
@@ -334,7 +405,7 @@ class AppState:
         started = time.monotonic()
         failure = ""
         try:
-            modeled = self.model_transform(plan, polish.POLISH_INSTRUCTIONS, cleaned or raw)
+            modeled = self.model_transform(plan, polish.POLISH_INSTRUCTIONS + "\n" + self.personal.instructions(self.target_app, cleaned or raw), cleaned or raw)
         except oauth.CliFailure as exc:
             failure, modeled = exc.reason, None
         except Exception:
@@ -357,11 +428,11 @@ class AppState:
             note = "군더더기를 빼고 넣었습니다"
         return fallback, note, False
 
-    def model_transform(self, plan: polish.PolishPlan, instructions: str, user: str) -> str | None:
+    def model_transform(self, plan: polish.PolishPlan, instructions: str, user: str, *, editing: bool = False) -> str | None:
         if plan.provider == "cursor" or plan.uses_oauth:
             key = keys.get_key(plan.provider) if plan.needs_pasted_key else ""
             text = oauth.polish_via_cli(plan.provider, instructions, user, key=key)
-            return speech.sanitize(text, user) if text else None
+            return (text.strip() if editing and text and len(text)<=20000 else None) if editing else (speech.sanitize(text, user) if text else None)
         key = keys.get_key(plan.provider) if polish.needs_key(plan.provider) else ""
         req = polish.make_request(plan.provider, key, plan.model, instructions, user)
         if req is None:
@@ -372,4 +443,4 @@ class AppState:
         except OSError:
             return None
         parsed = polish.parse_text(plan.provider, data)
-        return speech.sanitize(parsed, user) if parsed else None
+        return (parsed.strip() if editing and parsed and len(parsed)<=20000 else None) if editing else (speech.sanitize(parsed, user) if parsed else None)
