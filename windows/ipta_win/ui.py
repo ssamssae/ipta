@@ -23,6 +23,45 @@ def _noactivate(win: tk.Toplevel) -> None:
     user32.SetWindowLongW(hwnd, -20, style | 0x08000000 | 0x00000080 | 0x00000008)
 
 
+def bind_scrolling(window: tk.Toplevel, canvas: tk.Canvas) -> Callable[[], None]:
+    """Scope wheel events to this settings window, including child controls."""
+    tag = f"IptaWheel{window}"
+    remainder = 0
+
+    def wheel(event):
+        nonlocal remainder
+        if getattr(event, "num", None) in (4, 5):
+            steps = 1 if event.num == 4 else -1
+        elif sys.platform == "darwin":
+            steps = int(event.delta)
+        else:
+            remainder += int(event.delta)
+            steps = int(remainder / 120)
+            remainder -= steps * 120
+        if steps:
+            canvas.yview_scroll(-steps * 3, "units")
+        return "break"
+
+    for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+        window.bind_class(tag, sequence, wheel)
+
+    def tag_children(widget):
+        tags = widget.bindtags()
+        if tag not in tags:
+            widget.bindtags((tag, *tags))
+        for child in widget.winfo_children():
+            tag_children(child)
+
+    def cleanup(event):
+        if event.widget == window:
+            for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                window.unbind_class(tag, sequence)
+
+    window.bind("<Destroy>", cleanup, add="+")
+    tag_children(window)
+    return lambda: tag_children(window)
+
+
 class IptaApp:
     def __init__(self, state: AppState):
         self.state = state
@@ -130,7 +169,7 @@ class IptaApp:
         win.title("설정")
         win.geometry("420x640")
         self.settings = win
-        canvas = tk.Canvas(win, highlightthickness=0)
+        canvas = tk.Canvas(win, highlightthickness=0, yscrollincrement=20)
         scroll = ttk.Scrollbar(win, orient="vertical", command=canvas.yview)
         frame = ttk.Frame(canvas)
         frame.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -144,6 +183,7 @@ class IptaApp:
         self._polish_box(frame)
         self._hotkey_box(frame)
         ttk.Button(frame, text="닫기", command=win.destroy).pack(anchor="e", padx=12, pady=12)
+        self._tag_settings_scroll = bind_scrolling(win, canvas)
 
     def open_personalization(self) -> None:
         if self.personal_window and self.personal_window.winfo_exists():
@@ -282,6 +322,7 @@ class IptaApp:
                 text=f"{hotkey_label(self.state.toggle_hotkey)} 시작/정지 · {hotkey_label(self.state.cancel_hotkey)} 취소"
             )
             self.redraw_providers()
+            self._tag_settings_scroll()
 
     def _place_hud(self, hud: tk.Toplevel) -> None:
         hud.update_idletasks()
