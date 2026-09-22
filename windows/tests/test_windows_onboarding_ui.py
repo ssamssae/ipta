@@ -49,7 +49,9 @@ class OnboardingSmoke(unittest.TestCase):
         for _ in range(2):
             self.app.open_settings()
             win = self.app.settings
-            win.geometry('420x240')
+            self.app.root.update()
+            self.assertLessEqual(win.winfo_height(), win.winfo_screenheight() - 100)
+            win.geometry('420x360')
             self.app.root.update()
             canvas = next(w for w in win.winfo_children() if isinstance(w, tk.Canvas))
             canvas.yview_moveto(0)
@@ -66,6 +68,14 @@ class OnboardingSmoke(unittest.TestCase):
                 child.event_generate('<MouseWheel>', delta=-30)
             self.app.root.update()
             self.assertGreater(canvas.yview()[0], 0)
+            for _ in range(80):
+                child.event_generate('<MouseWheel>', delta=-120)
+            self.app.root.update()
+            self.assertAlmostEqual(canvas.yview()[1], 1.0)
+            frame = canvas.nametowidget(canvas.itemcget(canvas.find_all()[0], 'window'))
+            close = next(w for w in frame.winfo_children() if isinstance(w, ttk.Button) and w['text'] == '닫기')
+            self.assertGreaterEqual(close.winfo_rooty(), canvas.winfo_rooty())
+            self.assertLessEqual(close.winfo_rooty() + close.winfo_height(), canvas.winfo_rooty() + canvas.winfo_height())
             self.assertFalse(any(tag.startswith('IptaWheel') for tag in self.app.toggle_btn.bindtags()))
             win.destroy()
             self.app.root.update()
