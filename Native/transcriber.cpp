@@ -1,4 +1,7 @@
 #include "whisper.h"
+#ifdef _WIN32
+#include "ggml-backend.h"
+#endif
 #include "common-whisper.h"
 #include "json.hpp"
 #include <iostream>
@@ -9,6 +12,9 @@
 // EOF releases the model when the owning app exits. Each request has fresh context.
 int main(int argc, char ** argv) {
     if (argc != 2) return 2;
+#ifdef _WIN32
+    ggml_backend_load_all();
+#endif
     auto cp = whisper_context_default_params();
     auto * ctx = whisper_init_from_file_with_params(argv[1], cp);
     if (!ctx) return 3;

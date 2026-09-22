@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable
 
-from . import info, paste, polish
+from . import info, paste, polish, personalization_ui
 from .app import AppState, PHASES
 from .hotkeys import label as hotkey_label
 from .hud import hud_geometry, hud_subtitle, hud_title
@@ -32,6 +32,7 @@ class IptaApp:
         self.root.minsize(340, 480)
         self.settings: tk.Toplevel | None = None
         self.hud: tk.Toplevel | None = None
+        self.personal_window: tk.Toplevel | None = None
         state.on_change = self.refresh
         self._apply_icon()
         self._build_main()
@@ -71,6 +72,7 @@ class IptaApp:
         self.result.pack(fill="both", expand=True, padx=16, pady=8)
         btns = ttk.Frame(self.root)
         btns.pack(fill="x", padx=16, pady=(0, 16))
+        ttk.Button(btns, text="복사", command=lambda: paste.copy_text(self.state.transcript) if self.state.transcript else None).pack(side="left", padx=(0, 8))
         ttk.Button(btns, text="설정", command=self.open_settings).pack(side="left")
         ttk.Button(btns, text="숨기기", command=self.hide).pack(side="left", padx=8)
 
@@ -98,10 +100,18 @@ class IptaApp:
         canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         ttk.Label(frame, text="설정", font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=12, pady=8)
+        ttk.Button(frame, text="개인 사전·앱별 말투·기록·음성 편집", command=self.open_personalization).pack(anchor="w", padx=12, pady=8)
         self._status_box(frame)
         self._polish_box(frame)
         self._hotkey_box(frame)
         ttk.Button(frame, text="닫기", command=win.destroy).pack(anchor="e", padx=12, pady=12)
+
+    def open_personalization(self) -> None:
+        if self.personal_window and self.personal_window.winfo_exists():
+            self.personal_window.lift()
+        else:
+            self.personal_window = personalization_ui.open_window(self.root, self.state)
+        self._remember_own_hwnds()
 
     def _status_box(self, parent: tk.Widget) -> None:
         box = ttk.LabelFrame(parent, text="지금 상태")
@@ -178,7 +188,7 @@ class IptaApp:
 
     def _remember_own_hwnds(self) -> None:
         hwnds: list[int] = []
-        for win in (self.root, self.settings, self.hud):
+        for win in (self.root, self.settings, self.hud, self.personal_window):
             if win is None:
                 continue
             try:

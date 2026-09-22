@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from . import info
@@ -25,7 +26,7 @@ def whisper_cli(bundle_dir: Path | None = None) -> Path | None:
     return None
 
 
-def transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) -> str:
+def _cli_transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) -> str:
     binary = cli or whisper_cli()
     if binary is None:
         raise RuntimeError("앱 안의 whisper-cli 를 찾지 못했습니다. 다시 설치하세요.")
@@ -50,6 +51,7 @@ def transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) ->
             "-t",
             "4",
         ],
+        timeout=90,
         capture_output=True,
         check=False,
         cwd=str(binary.parent),
@@ -66,3 +68,51 @@ def transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) ->
         if file_text:
             return file_text
     return stdout.strip()
+
+
+_engine = None
+_engine_key = None
+_generation = 0
+_pool_lock = threading.Lock()
+
+
+def _get_engine(model: Path, binary: Path):
+    from .warm_engine import WarmEngine
+    global _engine, _engine_key
+    worker = binary.with_name("ipta-transcriber.exe" if sys.platform == "win32" else "ipta-transcriber")
+    if not worker.is_file(): return None
+    key = (str(worker), str(model), model.stat().st_mtime_ns)
+    with _pool_lock:
+        if key != _engine_key:
+            if _engine: _engine.cancel()
+            _engine, _engine_key = WarmEngine(worker, model), key
+        return _engine
+
+
+def prepare() -> None:
+    def work():
+        try:
+            binary, model = whisper_cli(), info.model_path()
+            if binary and model.is_file():
+                engine = _get_engine(model, binary)
+                if engine: engine.prepare()
+        except OSError: pass
+    threading.Thread(target=work, daemon=True).start()
+
+
+def cancel() -> None:
+    global _generation
+    _generation += 1
+    if _engine: _engine.cancel()
+
+
+def transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) -> str:
+    generation = _generation
+    model_file, binary = model or info.model_path(), cli or whisper_cli()
+    if binary and model_file.is_file():
+        try:
+            engine = _get_engine(model_file, binary)
+            if engine: return engine.transcribe(wav)
+        except (OSError, RuntimeError):
+            if generation != _generation: raise RuntimeError("받아쓰기를 취소했습니다")
+    return _cli_transcribe(wav, model_file, binary)

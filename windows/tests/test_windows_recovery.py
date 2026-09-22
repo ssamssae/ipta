@@ -26,7 +26,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn('로그인을 쓰지 못해', note)
 
     def test_grok_json_uses_only_final_text(self):
-        with patch.object(oauth, 'probe', return_value=oauth.Probe(True, False, '')), patch.object(oauth, 'binary', return_value=Path('/grok')), patch.object(oauth, 'run_cli', return_value=json.dumps({'text':'안녕하세요', 'thought':'private', 'usage':{}})) as run:
+        with patch.object(oauth, 'probe', return_value=oauth.Probe(True, False, '')), patch.object(oauth, 'binary', return_value=Path('/grok')), patch.object(oauth, 'run_grok_stream', return_value=json.dumps({'text':'안녕하세요', 'thought':'private', 'usage':{}})) as run:
             self.assertEqual(oauth.polish_via_cli('grok', '다듬어', '안녕하세요'), '안녕하세요')
             args = run.call_args.args[0]
             self.assertEqual(args[args.index('--tools')+1], '')
