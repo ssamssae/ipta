@@ -46,14 +46,14 @@ log "whisper HEAD=$WHISPER_HEAD"
 
 build_whisper() {
   local arch="$1"
-  local bld="$BUILD/whisper-build-$arch"
+  local bld="$BUILD/whisper-worker-build-$arch"
   mkdir -p "$bld"
   # GGML_NATIVE=ON on an M-series host injects -mcpu=apple-m4 into the x86_64 slice.
   local cflags="-arch ${arch} -mmacosx-version-min=${DEPLOY}"
   if [[ "$arch" == "x86_64" ]]; then
     cflags+=" -march=x86-64 -mtune=generic"
   fi
-  cmake -S "$WHISPER_SRC" -B "$bld" \
+  cmake -S "$ROOT/Native" -B "$bld" \
     -DCMAKE_C_COMPILER="$CC" \
     -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=Release \
@@ -66,7 +66,7 @@ build_whisper() {
     -DGGML_NATIVE=OFF \
     -DGGML_METAL=ON \
     -DGGML_METAL_EMBED_LIBRARY=ON >&2
-  cmake --build "$bld" --config Release --target whisper-cli -j "$(sysctl -n hw.ncpu)" >&2
+  cmake --build "$bld" --config Release --target whisper-cli ipta-transcriber -j "$(sysctl -n hw.ncpu)" >&2
   local cli
   cli="$(find "$bld" -name whisper-cli -type f | head -n 1)"
   if [[ -z "$cli" || ! -x "$cli" ]]; then
@@ -99,6 +99,8 @@ if [[ "$IPTA_ARCH" == "universal" ]]; then
   W_X86="$(build_whisper x86_64)"
   lipo -create -output "$BUILD/whisper-cli-universal" "$W_ARM" "$W_X86"
   CLI="$BUILD/whisper-cli-universal"
+  lipo -create -output "$BUILD/ipta-transcriber-universal" "$BUILD/whisper-worker-build-arm64/ipta-transcriber" "$BUILD/whisper-worker-build-x86_64/ipta-transcriber"
+  WORKER="$BUILD/ipta-transcriber-universal"
   log "swift arm64"
   S_ARM="$(build_swift arm64)"
   log "swift x86_64"
@@ -107,6 +109,7 @@ if [[ "$IPTA_ARCH" == "universal" ]]; then
   BIN="$BUILD/Ipta-universal"
 else
   CLI="$(build_whisper "$IPTA_ARCH")"
+  WORKER="$BUILD/whisper-worker-build-$IPTA_ARCH/ipta-transcriber"
   BIN="$(build_swift "$IPTA_ARCH")"
 fi
 log "whisper-cli=$CLI"
@@ -120,7 +123,8 @@ if [[ -f "$ROOT/App/Resources/AppIcon.icns" ]]; then
 fi
 cp "$BIN" "$APP/Contents/MacOS/Ipta"
 cp "$CLI" "$APP/Contents/Helpers/whisper-cli"
-chmod 755 "$APP/Contents/MacOS/Ipta" "$APP/Contents/Helpers/whisper-cli"
+cp "$WORKER" "$APP/Contents/Helpers/ipta-transcriber"
+chmod 755 "$APP/Contents/MacOS/Ipta" "$APP/Contents/Helpers/whisper-cli" "$APP/Contents/Helpers/ipta-transcriber"
 
 assert_metal() {
   local bin="$1"
@@ -133,12 +137,16 @@ assert_metal() {
 if [[ "$IPTA_ARCH" == "universal" ]]; then
   assert_metal "$APP/Contents/Helpers/whisper-cli" arm64
   assert_metal "$APP/Contents/Helpers/whisper-cli" x86_64
+  assert_metal "$APP/Contents/Helpers/ipta-transcriber" arm64
+  assert_metal "$APP/Contents/Helpers/ipta-transcriber" x86_64
   for need in arm64 x86_64; do
     lipo -archs "$APP/Contents/MacOS/Ipta" | grep -qw "$need"
     lipo -archs "$APP/Contents/Helpers/whisper-cli" | grep -qw "$need"
+    lipo -archs "$APP/Contents/Helpers/ipta-transcriber" | grep -qw "$need"
   done
 else
   assert_metal "$APP/Contents/Helpers/whisper-cli" "$IPTA_ARCH"
+  assert_metal "$APP/Contents/Helpers/ipta-transcriber" "$IPTA_ARCH"
   lipo -archs "$APP/Contents/MacOS/Ipta" | grep -qw "$IPTA_ARCH"
 fi
 
@@ -148,7 +156,7 @@ while IFS= read -r rp; do
   install_name_tool -delete_rpath "$rp" "$APP/Contents/MacOS/Ipta"
 done < <(otool -arch all -l "$APP/Contents/MacOS/Ipta" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | grep -E '^/Applications/Xcode|/Developer/Toolchains|/opt/homebrew|/usr/local|^/Users/' | sort -u || true)
 
-for bin in "$APP/Contents/MacOS/Ipta" "$APP/Contents/Helpers/whisper-cli"; do
+for bin in "$APP/Contents/MacOS/Ipta" "$APP/Contents/Helpers/whisper-cli" "$APP/Contents/Helpers/ipta-transcriber"; do
   if otool -arch all -l "$bin" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}' | grep -E '^/Applications/Xcode|/Developer/Toolchains|/opt/homebrew|/usr/local|^/Users/'; then
     echo "forbidden rpath in $bin" >&2
     exit 2

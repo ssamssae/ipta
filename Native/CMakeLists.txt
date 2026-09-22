@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(ipta_transcriber LANGUAGES C CXX)
+add_subdirectory(../Vendor/whisper.cpp whisper)
+add_executable(ipta-transcriber transcriber.cpp)
+target_compile_features(ipta-transcriber PRIVATE cxx_std_17)
+target_include_directories(ipta-transcriber PRIVATE ../Vendor/whisper.cpp/examples)
+target_link_libraries(ipta-transcriber PRIVATE common whisper)
