@@ -77,11 +77,21 @@ enum SpeechCleaner {
     /// Drop model output that invents names or dishes not in the spoken text.
     static func keepsSpokenFacts(_ polished: String, source: String) -> Bool {
         if polished.contains("**") { return false }
+        guard numericTokens(polished) == numericTokens(source) else { return false }
         let compact = source.replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
         let novel = hangulRuns(polished).filter { tok in
             tok.count >= 2 && !compact.contains(tok)
         }
         return novel.count < 2
+    }
+
+    // Keep digit values and their order. Only thousands-separator commas may change.
+    static func numericTokens(_ text: String) -> [String] {
+        let re = try! NSRegularExpression(pattern: #"[+-]?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?"#)
+        let ns = text as NSString
+        return re.matches(in: text, range: NSRange(location: 0, length: ns.length)).map {
+            ns.substring(with: $0.range).replacingOccurrences(of: ",", with: "")
+        }
     }
 
     private static func hangulRuns(_ s: String) -> [String] {
@@ -151,13 +161,18 @@ final class Polisher: @unchecked Sendable {
             if plan.canAttemptModel,
                let text = self.modelTransform(job: job, plan: plan, instructions: Self.polishInstructions + "\n" + personalization.instructions(for: bundleID, text: corrected), user: cleaned.isEmpty ? corrected : cleaned)
             {
+                let requiredWords = personalization.vocabulary.map(\.spelling).filter { (cleaned.isEmpty ? corrected : cleaned).contains($0) }
+                guard requiredWords.allSatisfy({ text.contains($0) }) else {
+                    completion(PolishResult(text: cleaned.isEmpty ? corrected : cleaned, note: "등록한 단어가 바뀌어 기본 다듬기 결과를 보관했습니다", usedModel: false))
+                    return
+                }
                 completion(PolishResult(text: text, note: "말한 글을 \(plan.provider.title)로 다듬었습니다", usedModel: true))
                 return
             }
             let fallback = cleaned.isEmpty ? raw : cleaned
             let note: String
             if plan.usesOAuth {
-                note = "AI 응답 지연 또는 연결 실패로 기본 다듬기만 했습니다. 맥 로그인 문제는 아닙니다"
+                note = "AI 응답을 받지 못했거나 내용 검사를 통과하지 못해 기본 다듬기만 했습니다"
             } else if plan.needsPastedKey && !KeychainBox.hasKey(plan.provider) {
                 note = "키가 없어 기본 다듬기만 했습니다"
             } else if cleaned == raw {

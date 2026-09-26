@@ -332,15 +332,14 @@ class AppState:
             return
         if self._job != job:
             return
-        self.raw_transcript = raw
         if not raw.strip():
-            self.transcript = ""
             self.phase = "error"
             self.last_error = "말을 못 알아들었어요. 더 가까이서 말해보세요."
-            self.status_line = "받아적기 실패"
+            self.status_line = "알아들은 내용이 없어 이전 결과를 유지했습니다" if self.transcript else "받아적기 실패"
             self.notify()
             info.log("done used_model=False chars=0 empty-transcript")
             return
+        self.raw_transcript = raw
         self._selection_ready.wait(timeout=3.1) if self.selection_edit_enabled else None
         if self._job != job: return
         instruction = personalization.edit_instruction(raw) if self.selection_edit_enabled else None
@@ -435,6 +434,9 @@ class AppState:
             failure, modeled = "execution", None
         info.log(f"polish provider={plan.provider} elapsed={time.monotonic() - started:.2f} result={'ok' if modeled else failure or 'invalid_output'}")
         if modeled:
+            required = [entry['spelling'] for entry in self.personal.data['vocabulary'] if entry['spelling'] in (cleaned or raw)]
+            if not speech.keeps_spoken_facts(modeled, cleaned or raw) or not all(word in modeled for word in required):
+                return cleaned or raw, "숫자나 등록한 단어가 바뀌어 기본 다듬기 결과를 보관했습니다", False
             return modeled, f"말한 글을 {polish.title(plan.provider)}로 다듬었습니다", True
         fallback = cleaned or raw
         if failure == "timeout":

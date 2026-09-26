@@ -145,6 +145,8 @@ struct ResultView: View {
                 .padding(8)
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
             if !state.rawTranscript.isEmpty, state.rawTranscript != state.transcript {
+                AppKitActionButton(title: "원문으로 복구", identifier: "malgyeol-restore-raw", enabled: state.phase == .idle || state.phase == .error, action: { state.restoreRawTranscript() })
+                    .frame(width: 120, height: 28)
                 Text("받아적은 원문")
                     .font(.caption)
                     .foregroundStyle(.secondary)
