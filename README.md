@@ -6,7 +6,7 @@ Mac과 Windows에서 한국어를 받아 적는 앱입니다. 받아 적기는 �
 
 **Windows 10/11 x64:** `Ipta-VERSION-windows.exe`를 받아 실행합니다. 별도 Python 설치 없이 사용합니다. 처음에는 받아 적기 모델을 내려받습니다. 자세한 사용법은 [Windows 안내](windows/README.md)를 보세요.
 
-**받기:** [Releases](https://github.com/ssamssae/ipta/releases)에서 `Ipta-0.1.24-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
+**받기:** [최신 릴리스](https://github.com/ssamssae/ipta/releases/latest)에서 `Ipta-0.1.26-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
 
 **Mac 서명:** Minus Beta Studio 개발자 서명과 애플 공증을 거친 DMG를 배포합니다. Windows EXE는 코드 서명되지 않았습니다.
 
