@@ -28,6 +28,11 @@ def main() -> int:
     failed += check("keep chosen mic", audio.pick_device_id(devices, "0") == "0")
     failed += check("silent level low", audio.level_from_block([0.0] * 32) < 0.05)
     failed += check("loud level high", audio.level_from_block([0.4] * 32) > 0.7)
+    for word in ["어도비로 작업해", "아테나에서 써요", "플레이어 단어 음악", "있잖아요"]:
+        failed += check("preserve word " + word, speech.clean(word) == word)
+    failed += check("numeric value protected", not speech.keeps_spoken_facts("가격 29000원", "가격 19000원"))
+    failed += check("thousands separator allowed", speech.keeps_spoken_facts("가격 19,900원", "가격 19900원"))
+    failed += check("digit order protected", not speech.keeps_spoken_facts("3시에서 2시", "2시에서 3시"))
     print(f"failed={failed}")
     return 1 if failed else 0
 

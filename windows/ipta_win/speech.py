@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-_LEAD_FILLER = re.compile(r"^(음+|어+|아+|에+|그+)\s*")
-_MID_FILLER = re.compile(r"(음+|어+)\s+")
+_LEAD_FILLER = re.compile(r"^(음+|어+|아+|에+|그+)(?:\s+|$)")
+_MID_FILLER = re.compile(r"(?<![\w])(음+|어+)\s+")
 _WS = re.compile(r"\s+")
 _HANGUL_RUN = re.compile(r"[가-힣]{2,}")
 
@@ -23,7 +23,7 @@ def clean(raw: str) -> str:
     s = _LEAD_FILLER.sub("", s)
     s = _MID_FILLER.sub("", s)
     for filler in FILLERS:
-        s = s.replace(filler, " ")
+        s = re.sub(r"(?<![\w])" + re.escape(filler) + r"(?![\w])", " ", s)
     s = _WS.sub(" ", s)
     s = keep_last_intent(s)
     s = drop_immediate_repeats(s)
@@ -69,6 +69,8 @@ def drop_immediate_repeats(s: str) -> str:
 def keeps_spoken_facts(polished: str, source: str) -> bool:
     if "**" in polished:
         return False
+    if numeric_tokens(polished) != numeric_tokens(source):
+        return False
     compact = re.sub(r"\s+", "", source)
     novel = [tok for tok in _HANGUL_RUN.findall(polished) if len(tok) >= 2 and tok not in compact]
     return len(novel) < 2
@@ -85,3 +87,7 @@ def sanitize(text: str, source: str) -> str | None:
     if not keeps_spoken_facts(t, source):
         return None
     return t
+
+
+def numeric_tokens(text: str) -> list[str]:
+    return [s.replace(',', '') for s in re.findall(r'[+-]?[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?', text)]

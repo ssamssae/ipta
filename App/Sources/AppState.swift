@@ -335,13 +335,11 @@ final class AppState: ObservableObject {
                     guard self.jobs.isCurrent(job) else { return }
                     switch result {
                     case .success(let text):
-                        self.rawTranscript = text
-                        if text.isEmpty {
-                            self.transcript = ""
-                            self.phase = .idle
-                            self.statusLine = "알아들은 내용이 없습니다"
+                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            self.finishWithoutSpeech()
                             return
                         }
+                        self.rawTranscript = text
                         malgyeolLog("transcript chars=\(text.count) job=\(job)")
                         self.finishAfterTranscript(text, job: job)
                     case .failure(let err):
@@ -597,6 +595,23 @@ final class AppState: ObservableObject {
         lastPasteNote = note
         statusLine = note
         malgyeolLog("paste \(note)")
+    }
+
+    func finishWithoutSpeech() {
+        phase = .idle
+        wantsAutoPaste = false
+        lastPasteNote = ""
+        statusLine = transcript.isEmpty ? "알아들은 내용이 없습니다. 다시 녹음해 주세요." : "알아들은 내용이 없어 이전 결과를 유지했습니다. 다시 녹음해 주세요."
+    }
+
+    func restoreRawTranscript() {
+        guard phase == .idle || phase == .error, !rawTranscript.isEmpty else { return }
+        transcript = rawTranscript
+        wantsAutoPaste = false
+        lockedTarget = nil
+        lockedSelectedText = ""
+        lastPasteNote = ""
+        statusLine = "받아적은 원문을 복구했습니다. 확인 후 복사하세요."
     }
 
     func copyTranscript() {

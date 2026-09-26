@@ -29,6 +29,16 @@ import Foundation
     state.restoreHistory(record)
     precondition(state.transcript == record.text && state.rawTranscript == record.raw)
     precondition(state.lockedSummary.contains("복구"))
+    state.finishWithoutSpeech()
+    precondition(state.transcript == record.text && state.rawTranscript == record.raw)
+    precondition(state.statusLine.contains("이전 결과"))
+    state.restoreRawTranscript()
+    precondition(state.transcript == record.raw && state.statusLine.contains("원문"))
+    state.phase = .polishing
+    state.transcript = "busy"
+    state.restoreRawTranscript()
+    precondition(state.transcript == "busy")
+    state.phase = .idle
     state.deleteHistory(record.id)
     precondition(state.personalization.history.isEmpty)
     record.text = "another fixture"

@@ -11,6 +11,29 @@ from ipta_win import oauth, paste, polish
 from ipta_win.app import AppState
 
 class RecoveryTests(unittest.TestCase):
+    def test_silence_preserves_previous_result_and_raw(self):
+        state = AppState()
+        state.transcript, state.raw_transcript = 'previous result', 'previous raw'
+        with patch('ipta_win.app.transcribe.transcribe', return_value='  '):
+            state.finish_wav(Path('/unused-fixture.wav'), state._job)
+        self.assertEqual((state.transcript,state.raw_transcript),('previous result','previous raw'))
+        self.assertIn('이전 결과',state.status_line)
+
+    def test_registered_spelling_changes_are_rejected(self):
+        state = AppState(polish_enabled=True, polish_plan=polish.PolishPlan(tier='connected', provider='grok', auth_mode='oauth'))
+        state.personal.data['vocabulary'] = [{'heard': '입 타', 'spelling': '입타'}]
+        state.model_transform = Mock(return_value='다른앱을 써요')
+        text, note, used = state.polish_text('입타를 써요')
+        self.assertEqual(text, '입타를 써요')
+        self.assertFalse(used)
+
+    def test_numeric_changes_are_rejected(self):
+        state = AppState(polish_enabled=True, polish_plan=polish.PolishPlan(tier='connected', provider='grok', auth_mode='oauth'))
+        state.model_transform = Mock(return_value='금액은 29000원입니다')
+        text, note, used = state.polish_text('금액은 19000원입니다')
+        self.assertEqual(text,'금액은 19000원입니다')
+        self.assertFalse(used)
+
     def test_failed_cli_output_is_never_inserted(self):
         with self.assertRaises(oauth.CliFailure) as caught:
             oauth.run_cli([sys.executable, '-c', 'import sys; print("not a result"); sys.exit(2)'], raise_errors=True)
