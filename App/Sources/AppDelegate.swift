@@ -16,8 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menu: NSMenu?
     private var keyMonitor: Any?
 
+    /// 입타는 메뉴바 아이콘과 함께 일반 Dock 앱으로 남는다: Dock 실행 점과 왼쪽 위 앱 메뉴가 항상 보인다.
+    static let restingActivationPolicy: NSApplication.ActivationPolicy = .regular
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(Self.restingActivationPolicy)
         state.refreshPermissions()
         setupMainMenu()
         setupStatusItem()
@@ -151,22 +154,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setupMainMenu() {
-        let appMenu = NSMenu()
-        let quitItem = NSMenuItem(title: "입타 종료", action: #selector(quit), keyEquivalent: "q")
-        quitItem.target = self
-        appMenu.addItem(quitItem)
-        let appItem = NSMenuItem()
-        appItem.submenu = appMenu
-        let fileMenu = NSMenu(title: "파일")
-        let closeItem = NSMenuItem(title: "닫기", action: #selector(closeKeyWindow), keyEquivalent: "w")
-        closeItem.target = self
-        fileMenu.addItem(closeItem)
-        let fileItem = NSMenuItem()
-        fileItem.submenu = fileMenu
-        let main = NSMenu()
-        main.addItem(appItem)
-        main.addItem(fileItem)
+        let main = Self.makeMainMenu(target: self)
         NSApp.mainMenu = main
+        NSApp.windowsMenu = main.items.first { $0.submenu?.title == "윈도우" }?.submenu
+    }
+
+    /// 왼쪽 위 앱 메뉴. target 이 nil 이면 입타 전용 항목도 응답 체인으로 보낸다(자가검사용).
+    static func makeMainMenu(target: AnyObject?) -> NSMenu {
+        func item(_ title: String, _ action: Selector, _ key: String = "",
+                  _ mods: NSEvent.ModifierFlags = .command, own: Bool = false) -> NSMenuItem {
+            let it = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            it.keyEquivalentModifierMask = mods
+            if own { it.target = target }
+            return it
+        }
+        func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+            let menu = NSMenu(title: title)
+            items.forEach(menu.addItem)
+            let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            holder.submenu = menu
+            return holder
+        }
+        let main = NSMenu()
+        main.addItem(submenu("입타", [
+            item("입타에 관하여", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            item("설정…", #selector(AppDelegate.openSettings), ",", own: true),
+            .separator(),
+            item("입타 가리기", #selector(NSApplication.hide(_:)), "h"),
+            item("기타 가리기", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item("모두 보기", #selector(NSApplication.unhideAllApplications(_:))),
+            .separator(),
+            item("입타 종료", #selector(AppDelegate.quit), "q", own: true),
+        ]))
+        main.addItem(submenu("파일", [
+            item("입타 창 열기", #selector(AppDelegate.showPanel), "n", own: true),
+            item("닫기", #selector(AppDelegate.closeKeyWindow), "w", own: true),
+        ]))
+        main.addItem(submenu("편집", [
+            item("실행 취소", Selector(("undo:")), "z"),
+            item("실행 복귀", Selector(("redo:")), "z", [.command, .shift]),
+            .separator(),
+            item("오려두기", #selector(NSText.cut(_:)), "x"),
+            item("복사하기", #selector(NSText.copy(_:)), "c"),
+            item("붙여넣기", #selector(NSText.paste(_:)), "v"),
+            item("전체 선택", #selector(NSText.selectAll(_:)), "a"),
+        ]))
+        main.addItem(submenu("윈도우", [
+            item("최소화", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item("확대/축소", #selector(NSWindow.performZoom(_:))),
+            .separator(),
+            item("모두 앞으로 가져오기", #selector(NSApplication.arrangeInFront(_:))),
+        ]))
+        return main
     }
 
     private func setupStatusItem() {
@@ -272,7 +312,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func showPanel() {
-        NSApp.setActivationPolicy(.regular)
         panel?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         state.refreshPermissions()
@@ -282,11 +321,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         state.showSettings = false
         settingsWindow?.orderOut(nil)
         panel?.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        // 창을 숨기면 원래 쓰던 앱으로 포커스를 돌려준다. Dock 점은 그대로 남는다.
+        if NSApp.isActive {
+            NSApp.deactivate()
+        }
+    }
+
+    @objc func openSettings() {
+        if state.showSettings {
+            showSettingsWindow()
+        } else {
+            state.showSettings = true
+        }
     }
 
     private func showSettingsWindow() {
-        NSApp.setActivationPolicy(.regular)
         if settingsWindow == nil {
             setupSettingsWindow()
         }
@@ -307,13 +356,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if notification.object as? NSObject === settingsWindow {
             state.showSettings = false
-            if panel?.isVisible != true {
-                NSApp.setActivationPolicy(.accessory)
-            }
-            return
-        }
-        if settingsWindow?.isVisible != true {
-            NSApp.setActivationPolicy(.accessory)
         }
     }
 

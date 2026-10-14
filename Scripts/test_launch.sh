@@ -12,7 +12,7 @@ if [[ ! -d "$APP" ]]; then
 fi
 cp -R "$APP" "$TESTDIR/입타.app"
 echo "copied to $TESTDIR/입타.app"
-# Launch without activating worker terminals; LSUIElement app
+# Launch without activating worker terminals; regular Dock app with a menubar icon
 open "$TESTDIR/입타.app"
 sleep 2
 if pgrep -lf '입타.app/Contents/MacOS/Ipta|Malgyeol.app/Contents/MacOS/Ipta|Malgyeol.app/Contents/MacOS/Malgyeol' >/dev/null; then
