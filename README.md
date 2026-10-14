@@ -6,7 +6,7 @@ Mac과 Windows에서 한국어를 받아 적는 앱입니다. 받아 적기는 �
 
 **Windows 10/11 x64:** `Ipta-VERSION-windows.exe`를 받아 실행합니다. 별도 Python 설치 없이 사용합니다. 처음에는 받아 적기 모델을 내려받습니다. 자세한 사용법은 [Windows 안내](windows/README.md)를 보세요.
 
-**받기:** [최신 릴리스](https://github.com/ssamssae/ipta/releases/latest)에서 `Ipta-0.1.26-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
+**받기:** [최신 릴리스](https://github.com/ssamssae/ipta/releases/latest)에서 `Ipta-0.1.27-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
 
 **Mac 서명:** Minus Beta Studio 개발자 서명과 애플 공증을 거친 DMG를 배포합니다. Windows EXE는 코드 서명되지 않았습니다.
 
@@ -62,6 +62,10 @@ Windows 배포는 [Releases](https://github.com/ssamssae/ipta/releases)에서 Wi
 ### Windows 첫 실행·차단 안내
 
 Windows 10/11 x64용 EXE는 코드 서명이 없습니다. SmartScreen 경고가 표시될 수 있으므로 [Windows 실행 안내](windows/README.md#실행-차단-안내-smartscreen--미서명)를 먼저 확인하세요. 첫 사용에는 인터넷으로 모델 약 465 MiB(약 488 MB)를 받으며, 진행률·실패 재시도를 지원합니다. 준비 후 받아 적기는 오프라인으로 사용할 수 있습니다.
+## 0.1.27 Dock 앱·새 아이콘
+
+Mac 입타가 메뉴바 아이콘과 함께 일반 Dock 앱으로 동작합니다. 실행 중이면 Dock에 점이 보이고, 왼쪽 위에 입타·파일·편집·윈도우 메뉴가 생깁니다(설정은 ⌘,). 앱 아이콘을 새 주황 아이콘으로 바꿨습니다(Mac·Windows). 받아 적기 기능은 0.1.26과 같습니다. Mac에서 이전 버전을 덮어 설치하면 마이크·손쉬운 사용 권한을 다시 허용해야 할 수 있습니다.
+
 ## 0.1.24 Mac 통합 개선
 
 음성 인식 엔진을 미리 준비하고 재사용합니다. 개인 사전·앱별 말투·선택적 기록·선택 글 음성 편집을 포함하며, 설정 화면의 접근성 조회 충돌을 수정했습니다. Grok은 완료된 응답을 받으면 프로세스 정리를 기다리지 않고 결과를 전달합니다. 기존 설정과 모델은 유지됩니다.
