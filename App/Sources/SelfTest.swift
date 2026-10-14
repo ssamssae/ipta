@@ -253,6 +253,18 @@ enum SelfTest {
         )
         check("synthetic app stays a regular Dock app", AppDelegate.restingActivationPolicy == .regular)
         check(
+            "synthetic unsaved mic follows the Mac default",
+            AppState.resolveDevice(saved: "", available: ["BlackHole2ch_UID", "BuiltInMicrophoneDevice"]) == ""
+        )
+        check(
+            "synthetic saved mic is kept",
+            AppState.resolveDevice(saved: "AU05", available: ["BlackHole2ch_UID", "AU05"]) == "AU05"
+        )
+        check(
+            "synthetic missing mic falls back to the Mac default",
+            AppState.resolveDevice(saved: "Gone", available: ["BlackHole2ch_UID"]) == ""
+        )
+        check(
             "synthetic bundle is not menubar-only",
             (Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool) != true
         )
@@ -322,6 +334,12 @@ enum SelfTest {
         check("synthetic mic button restore after test", MicButtonSpec.load() == priorMic)
 
         // --- real: dedicated TextEdit document body ---
+        // MALGYEOL_SELFTEST_SKIP_REAL=1: 사람이 화면을 쓰는 중이면 텍스트 편집기를 앞으로 띄우지 않는다.
+        if ProcessInfo.processInfo.environment["MALGYEOL_SELFTEST_SKIP_REAL"] == "1" {
+            print("SKIP real textedit (MALGYEOL_SELFTEST_SKIP_REAL=1)")
+            print("selftest failed=\(failed) blocked=\(blocked)")
+            return failed == 0 ? 0 : 1
+        }
         let real = textEditRealPaste(paster: paster)
         print("REAL textedit \(real.detail)")
         switch real.status {
