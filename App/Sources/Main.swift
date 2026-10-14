@@ -98,7 +98,7 @@ enum MalgyeolMain {
         let delegate = AppDelegate()
         retainedDelegate = delegate
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(AppDelegate.restingActivationPolicy)
         app.run()
     }
 

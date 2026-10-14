@@ -251,6 +251,25 @@ enum SelfTest {
             "synthetic icon reopen opens window",
             AppDelegate.instancesRespond(to: #selector(AppDelegate.applicationShouldHandleReopen(_:hasVisibleWindows:)))
         )
+        check("synthetic app stays a regular Dock app", AppDelegate.restingActivationPolicy == .regular)
+        check(
+            "synthetic bundle is not menubar-only",
+            (Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool) != true
+        )
+        let mainMenu = MainActor.assumeIsolated { AppDelegate.makeMainMenu(target: nil) }
+        let menuItems = mainMenu.items.compactMap(\.submenu).flatMap(\.items)
+        check(
+            "synthetic main menu has settings",
+            menuItems.contains { $0.keyEquivalent == "," && $0.action == #selector(AppDelegate.openSettings) }
+        )
+        check(
+            "synthetic main menu has edit paste",
+            menuItems.contains { $0.keyEquivalent == "v" && $0.action == #selector(NSText.paste(_:)) }
+        )
+        check(
+            "synthetic main menu has window menu",
+            mainMenu.items.contains { $0.submenu?.title == "윈도우" }
+        )
         check("synthetic connected plan can use model", PolishPlan(tier: .connected, provider: .claude, model: "x", authMode: .key).canAttemptModel == true)
         check("synthetic cursor is a live provider", PolishProvider.allCases.contains(.cursor))
         check("synthetic cursor supports oauth", PolishProvider.cursor.supportsOAuth)
