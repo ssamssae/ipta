@@ -27,7 +27,9 @@ final class AppState: ObservableObject {
     @Published var maxSeconds: Double = MalgyeolInfo.maxSeconds
     @Published var micStatus = "확인 전"
     @Published var devices: [(id: String, name: String)] = []
+    /// 빈 문자열 = 맥 기본 마이크 따르기(녹음 때 맥 전체 기본 마이크를 바꾸지 않는다).
     @Published var selectedDeviceId = ""
+    @Published var systemInputName = ""
     @Published var downloadProgress: Double = 0
     @Published var downloadNote = ""
     @Published var modelReady = false
@@ -115,14 +117,9 @@ final class AppState: ObservableObject {
         micStatus = recorder.permissionLabel()
         axTrusted = Paster.isTrusted()
         devices = recorder.listDevices()
-        let saved = UserDefaults.standard.string(forKey: deviceKey) ?? selectedDeviceId
-        if devices.contains(where: { $0.id == saved }) {
-            selectedDeviceId = saved
-        } else if devices.contains(where: { $0.id == selectedDeviceId }) {
-            // keep current
-        } else if let first = devices.first {
-            selectedDeviceId = first.id
-        }
+        systemInputName = recorder.defaultInputName() ?? ""
+        let saved = UserDefaults.standard.string(forKey: deviceKey) ?? ""
+        selectedDeviceId = Self.resolveDevice(saved: saved, available: devices.map(\.id))
         let sizeOK = models.sizeLooksReady()
         modelReady = sizeOK
         if sizeOK {
@@ -155,6 +152,12 @@ final class AppState: ObservableObject {
             line += " · \(bound.label)"
         }
         hotkeyNote = line
+    }
+
+    /// 고른 마이크가 지금 있으면 그대로 쓴다. 고른 적이 없거나 사라졌으면 맥 기본 마이크를 따른다.
+    /// 목록 첫 장치(BlackHole 같은 가상 장치일 수 있다)를 대신 고르지 않는다.
+    nonisolated static func resolveDevice(saved: String, available: [String]) -> String {
+        available.contains(saved) ? saved : ""
     }
 
     func setSelectedDevice(_ id: String) {
@@ -280,7 +283,7 @@ final class AppState: ObservableObject {
             recording = true
             phase = .recording
             statusLine = "듣는 중 — 같은 키로 멈춥니다"
-            malgyeolLog("record start device=\(selectedDeviceId) job=\(job)")
+            malgyeolLog("record start device=\(selectedDeviceId.isEmpty ? "system-default" : selectedDeviceId) job=\(job)")
         } catch {
             phase = .error
             lastError = "녹음을 시작하지 못했습니다: \(error.localizedDescription)"

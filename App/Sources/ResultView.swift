@@ -191,11 +191,20 @@ struct SettingsView: View {
                     get: { state.selectedDeviceId },
                     set: { state.setSelectedDevice($0) }
                 )) {
+                    Text(state.systemInputName.isEmpty ? "맥 기본 마이크 따르기" : "맥 기본 마이크 따르기 · 지금 \(state.systemInputName)").tag("")
                     ForEach(state.devices, id: \.id) { d in
                         Text(WirelessMicHint.looksWireless(d.name) ? "\(d.name) · 무선" : d.name).tag(d.id)
                     }
                 }
-                Text("상태: \(state.micStatus)")
+                HStack {
+                    Text("상태: \(state.micStatus)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("목록 새로고침") { state.refreshPermissions() }
+                        .controlSize(.small)
+                }
+                Text("마이크를 직접 고르면 녹음할 때 맥 기본 마이크도 그 장치로 바뀝니다. 언제든 여기서 다시 바꿀 수 있습니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
