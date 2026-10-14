@@ -80,11 +80,13 @@ build_swift() {
   local arch="$1"
   (
     cd "$ROOT"
-    swift build -c release --arch "$arch" \
+    # Swift 6.4+ (Xcode 27) writes every --arch into the same Products/Release
+    # unless each arch has its own scratch path; lipo then sees two x86_64 slices.
+    swift build -c release --arch "$arch" --scratch-path "$ROOT/.build-$arch" \
       -Xswiftc -target -Xswiftc "${arch}-apple-macosx${DEPLOY}"
   ) >&2
   local bin
-  bin="$(cd "$ROOT" && swift build -c release --arch "$arch" --show-bin-path)/Malgyeol"
+  bin="$(cd "$ROOT" && swift build -c release --arch "$arch" --scratch-path "$ROOT/.build-$arch" --show-bin-path)/Malgyeol"
   if [[ ! -x "$bin" ]]; then
     echo "swift binary missing for $arch: $bin" >&2
     exit 1
