@@ -236,7 +236,7 @@ final class AppState: ObservableObject {
         cleanupWav()
         if fromHotkey {
             lockedTarget = TargetLock.capture()
-            lockedSelectedText = TargetLock.selectedText()
+            lockedSelectedText = TargetLock.selectedText(of: lockedTarget)
             wantsAutoPaste = true
             lockedSummary = lockedTarget?.summary ?? ""
             if let why = lockedTarget?.refusalReason {

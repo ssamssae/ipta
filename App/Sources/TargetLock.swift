@@ -68,7 +68,11 @@ struct LockedTarget {
 }
 
 enum TargetLock {
+    /// AX 호출 하나당 기다리는 상한(초). 느린 앱(브라우저·일렉트론)이 단축키 반응을 잡아먹지 않게 한다.
+    static let axTimeout: Float = 0.3
+
     static func capture() -> LockedTarget {
+        let started = Date()
         let front = NSWorkspace.shared.frontmostApplication
         let pid = front?.processIdentifier ?? 0
         let bundle = front?.bundleIdentifier ?? ""
@@ -85,7 +89,13 @@ enum TargetLock {
         let trusted = AXIsProcessTrusted()
         if trusted, pid != 0 {
             let appEl = AXUIElementCreateApplication(pid)
-            if let focused = copyAX(appEl, kAXFocusedUIElementAttribute as String) {
+            AXUIElementSetMessagingTimeout(appEl, axTimeout)
+            var focusedEl = copyAX(appEl, kAXFocusedUIElementAttribute as String)
+            if focusedEl == nil, enableEnhancedUserInterface(appEl, bundleId: bundle) {
+                focusedEl = copyAX(appEl, kAXFocusedUIElementAttribute as String)
+            }
+            if let focused = focusedEl {
+                AXUIElementSetMessagingTimeout(focused, axTimeout)
                 element = focused
                 role = axString(focused, kAXRoleAttribute as String)
                 subrole = axString(focused, kAXSubroleAttribute as String)
@@ -99,6 +109,8 @@ enum TargetLock {
         if role == "AXSecureTextField" || subrole == "AXSecureTextField" {
             secure = true
         }
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        if ms > 200 { malgyeolLog("lock capture slow \(ms)ms app=\(name) role=\(role.isEmpty ? "?" : role)") }
         return LockedTarget(
             pid: pid,
             bundleId: bundle,
@@ -131,9 +143,28 @@ enum TargetLock {
     }
 
     static func selectedText() -> String {
-        let snap = capture()
-        guard let el = snap.element else { return "" }
+        selectedText(of: capture())
+    }
+
+    /// 이미 잡아 둔 대상에서 선택 글만 읽는다. 녹음 시작 때 접근성 트리를 두 번 훑지 않으려고 둔다.
+    static func selectedText(of target: LockedTarget?) -> String {
+        guard let el = target?.element else { return "" }
         return axString(el, kAXSelectedTextAttribute as String)
+    }
+
+    /// 크롬·일렉트론 계열은 AXEnhancedUserInterface 를 켜야 입력칸을 접근성 트리에 내놓는다.
+    /// 포커스 요소를 못 찾았을 때만 한 번 켜고 잠깐 기다린다. 끄지는 않는다(앱을 다시 켤 때 풀린다).
+    static func enableEnhancedUserInterface(_ appEl: AXUIElement, bundleId: String) -> Bool {
+        let attr = "AXEnhancedUserInterface" as CFString
+        var current: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appEl, attr, &current) == .success,
+           ((current as? Bool) ?? (current as? NSNumber)?.boolValue) == true {
+            return false
+        }
+        guard AXUIElementSetAttributeValue(appEl, attr, kCFBooleanTrue) == .success else { return false }
+        malgyeolLog("lock enhanced-ui on \(bundleId)")
+        Thread.sleep(forTimeInterval: 0.08)
+        return true
     }
 
     static func frontWindowNumber(pid: pid_t) -> Int {
