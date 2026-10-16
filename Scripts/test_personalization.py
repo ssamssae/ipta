@@ -33,6 +33,7 @@ func malgyeolLog(_ text: String) {}
         precondition(SpeechCleaner.clean(text) == text)
     }
     precondition(SpeechCleaner.clean("수량은 10 10 20개야") == "수량은 10 10 20개야")
+    precondition(SpeechCleaner.clean("그 사람의 요청도 보존해 줘") == "그 사람의 요청도 보존해 줘")
     let longSpeech = String(repeating: "첫 번째 설정을 확인하고 기록을 보존해 주세요. ", count: 12) + "마지막 요청도 남겨 주세요."
     precondition(!SpeechCleaner.keepsSpokenFacts(String(longSpeech.prefix(90)), source: longSpeech))
     let partial = Data(#"{"choices":[{"finish_reason":"length","message":{"content":"문장의 앞부분"}}]}"#.utf8)

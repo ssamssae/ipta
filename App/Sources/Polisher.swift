@@ -22,7 +22,7 @@ enum SpeechCleaner {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.isEmpty { return s }
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        for pat in [#"^(음+|어+|아+|에+|그+)(?:\s+|$)"#, #"(?<![\p{L}\p{N}_])(음+|어+)\s+"#] {
+        for pat in [#"^(음+|어+|아+|에+)(?:\s+|$)"#, #"(?<![\p{L}\p{N}_])(음+|어+)\s+"#] {
             s = s.replacingOccurrences(of: pat, with: "", options: .regularExpression)
         }
         s = s.replacingOccurrences(

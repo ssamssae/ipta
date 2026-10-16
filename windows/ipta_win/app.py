@@ -445,7 +445,7 @@ class AppState:
         if modeled:
             required = [entry['spelling'] for entry in self.personal.data['vocabulary'] if entry['spelling'] in (cleaned or raw)]
             if not speech.keeps_spoken_facts(modeled, cleaned or raw) or not all(word in modeled for word in required):
-                return cleaned or raw, "숫자나 등록한 단어가 바뀌어 기본 다듬기 결과를 보관했습니다", False
+                return cleaned or raw, "다듬기에서 내용이 줄거나 바뀌어 받아 적은 글을 유지했습니다", False
             return modeled, f"말한 글을 {polish.title(plan.provider)}로 다듬었습니다", True
         fallback = cleaned or raw
         if failure == "timeout":

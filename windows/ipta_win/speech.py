@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-_LEAD_FILLER = re.compile(r"^(음+|어+|아+|에+|그+)(?:\s+|$)")
+_LEAD_FILLER = re.compile(r"^(음+|어+|아+|에+)(?:\s+|$)")
 _MID_FILLER = re.compile(r"(?<![\w])(음+|어+)\s+")
 _WS = re.compile(r"\s+")
 _HANGUL_RUN = re.compile(r"[가-힣]{2,}")

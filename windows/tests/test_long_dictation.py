@@ -21,6 +21,7 @@ class LongDictationTests(unittest.TestCase):
             text = f'앞의 요청을 모두 기록해. {separator} 추가 요청도 뒤에 기록해.'
             self.assertEqual(speech.clean(text), text)
         self.assertEqual(speech.clean('수량은 10 10 20개야'), '수량은 10 10 20개야')
+        self.assertEqual(speech.clean('그 사람의 요청도 보존해 줘'), '그 사람의 요청도 보존해 줘')
 
     def test_truncated_polish_keeps_complete_transcription(self):
         text = '첫 번째 설정을 확인하고 기록을 보존해 주세요. ' * 12 + '끝으로 마지막 요청도 반드시 남겨 주세요.'
