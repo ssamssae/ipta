@@ -26,9 +26,11 @@ final class AppState: ObservableObject {
     @Published var elapsed: Double = 0
     @Published var maxSeconds: Double = MalgyeolInfo.maxSeconds
     @Published var micStatus = "확인 전"
-    @Published var devices: [(id: String, name: String)] = []
-    /// 빈 문자열 = 맥 기본 마이크 따르기(녹음 때 맥 전체 기본 마이크를 바꾸지 않는다).
+    @Published var devices: [AudioInputDevice] = []
+    /// 빈 문자열 = 맥 기본 마이크 따르기. 어느 쪽이든 맥 전체 기본 마이크는 바꾸지 않는다.
     @Published var selectedDeviceId = ""
+    /// 「기본 입력이 가상 장치라 다른 마이크로 녹음」 같은 안내 한 줄. 비면 알릴 것 없음.
+    @Published var micNote = ""
     @Published var systemInputName = ""
     @Published var downloadProgress: Double = 0
     @Published var downloadNote = ""
@@ -116,10 +118,7 @@ final class AppState: ObservableObject {
     func refreshPermissions() {
         micStatus = recorder.permissionLabel()
         axTrusted = Paster.isTrusted()
-        devices = recorder.listDevices()
-        systemInputName = recorder.defaultInputName() ?? ""
-        let saved = UserDefaults.standard.string(forKey: deviceKey) ?? ""
-        selectedDeviceId = Self.resolveDevice(saved: saved, available: devices.map(\.id))
+        refreshDevices()
         let sizeOK = models.sizeLooksReady()
         modelReady = sizeOK
         if sizeOK {
@@ -163,6 +162,19 @@ final class AppState: ObservableObject {
     func setSelectedDevice(_ id: String) {
         selectedDeviceId = id
         UserDefaults.standard.set(id, forKey: deviceKey)
+        micNote = MicPolicy.pick(selected: id, devices: devices, lidClosed: Recorder.isLidClosed()).reason.note ?? ""
+    }
+
+    /// 장치 목록·맥 기본 입력 표시·안내 한 줄을 새로 읽는다.
+    /// 맥 기본 입력이나 장치 목록이 바뀌면 Recorder 가 메인 큐에서 다시 부른다.
+    func refreshDevices() {
+        recorder.onInputDevicesChange = { [weak self] in self?.refreshDevices() }
+        recorder.watchInputDevices()
+        devices = recorder.listDevices()
+        systemInputName = devices.first(where: { $0.isSystemDefault })?.title ?? recorder.defaultInputName() ?? ""
+        let saved = UserDefaults.standard.string(forKey: deviceKey) ?? ""
+        selectedDeviceId = Self.resolveDevice(saved: saved, available: devices.map(\.id))
+        micNote = MicPolicy.pick(selected: selectedDeviceId, devices: devices, lidClosed: Recorder.isLidClosed()).reason.note ?? ""
     }
 
     func beginMicButtonCapture() {

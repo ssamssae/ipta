@@ -192,9 +192,14 @@ struct SettingsView: View {
                     set: { state.setSelectedDevice($0) }
                 )) {
                     Text(state.systemInputName.isEmpty ? "맥 기본 마이크 따르기" : "맥 기본 마이크 따르기 · 지금 \(state.systemInputName)").tag("")
-                    ForEach(state.devices, id: \.id) { d in
-                        Text(WirelessMicHint.looksWireless(d.name) ? "\(d.name) · 무선" : d.name).tag(d.id)
+                    ForEach(state.devices) { d in
+                        Text(WirelessMicHint.looksWireless(d.name) ? "\(d.title) · 무선" : d.title).tag(d.id)
                     }
+                }
+                if !state.micNote.isEmpty {
+                    Text(state.micNote)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 HStack {
                     Text("상태: \(state.micStatus)")
