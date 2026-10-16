@@ -312,7 +312,7 @@ class IptaApp:
             self.model_box.pack_forget()
         elif not self.model_box.winfo_manager():
             self.model_box.pack(fill="x", padx=16, pady=4, before=self.result)
-        self.toggle_btn.configure(state="disabled" if downloading or not self.state.model_ready else "normal")
+        self.toggle_btn.configure(state="disabled" if self.state.phase in ("downloading", "transcribing", "polishing") or not self.state.model_ready else "normal")
         busy = self.state.phase in ("downloading", "recording", "transcribing", "polishing")
         if not busy:
             self.result.delete("1.0", "end")
@@ -370,7 +370,7 @@ class IptaApp:
         self.hud_stop = tk.Button(
             bar,
             text="정지",
-            command=self.state.toggle,
+            command=lambda: self.state.stop_and_transcribe() if self.state.recording else self.state.cancel(),
             bg="#3f3f46",
             fg="#f5f5f5",
             relief="flat",

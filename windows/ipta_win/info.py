@@ -6,7 +6,7 @@ from pathlib import Path
 PRODUCT_KO = "입타"
 PRODUCT_EN = "Ipta"
 LABEL = "입타"
-MAX_SECONDS = 60.0
+MAX_SECONDS = 600.0
 MODEL_NAME = "ggml-small.bin"
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
 MODEL_SHA256 = "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"

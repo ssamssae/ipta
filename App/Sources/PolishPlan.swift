@@ -344,7 +344,7 @@ enum PolishAPI {
             req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
             body = [
                 "model": model,
-                "max_tokens": 220,
+                "max_tokens": max(220, min(8192, user.count * 3 + 64)),
                 "system": system,
                 "messages": [["role": "user", "content": user]],
             ]
@@ -357,7 +357,7 @@ enum PolishAPI {
             body = [
                 "model": model,
                 "temperature": 0.2,
-                "max_tokens": 220,
+                "max_tokens": max(220, min(8192, user.count * 3 + 64)),
                 "messages": [
                     ["role": "system", "content": system],
                     ["role": "user", "content": user],
@@ -374,6 +374,8 @@ enum PolishAPI {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         switch provider {
         case .claude:
+            if let reason = obj["stop_reason"] as? String,
+               ["max_tokens", "refusal", "pause_turn"].contains(reason) { return nil }
             guard let content = obj["content"] as? [[String: Any]] else { return nil }
             let texts = content.compactMap { $0["text"] as? String }
             return texts.joined().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -384,6 +386,8 @@ enum PolishAPI {
                 let choices = obj["choices"] as? [[String: Any]],
                 let msg = choices.first?["message"] as? [String: Any]
             else { return nil }
+            if let reason = choices.first?["finish_reason"] as? String,
+               ["length", "content_filter", "tool_calls"].contains(reason) { return nil }
             if let c = msg["content"] as? String, !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return c.trimmingCharacters(in: .whitespacesAndNewlines)
             }

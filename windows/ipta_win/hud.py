@@ -1,4 +1,5 @@
 from __future__ import annotations
+from . import info
 
 HUD_WIDTH = 320
 HUD_HEIGHT = 56
@@ -17,5 +18,8 @@ def hud_title(phase: str) -> str:
 
 def hud_subtitle(phase: str, elapsed: float) -> str:
     if phase == "recording":
-        return f"{elapsed:.0f}초 · 같은 키로 멈춤"
+        remaining = info.MAX_SECONDS - elapsed
+        if remaining <= 30:
+            return f"{max(0, remaining):.0f}초 뒤 자동 정지"
+        return f"{elapsed:.0f}초 · 최대 10분"
     return "잠시만요"

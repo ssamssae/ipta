@@ -227,7 +227,8 @@ class AppState:
         if self.phase == "recording":
             self.stop_and_transcribe()
         elif self.phase in ("downloading", "transcribing", "polishing"):
-            self.cancel()
+            # A second stop press after automatic completion must not discard the result.
+            return
         else:
             self.start()
 
@@ -284,11 +285,16 @@ class AppState:
 
         def work() -> None:
             wav = Path(tempfile.gettempdir()) / f"ipta-{job}.wav"
-            started = time.time()
+            started = time.monotonic()
+            next_prepare = started + 60
 
             def on_level(level: float) -> None:
+                nonlocal next_prepare
                 self.level = level
-                self.elapsed = min(info.MAX_SECONDS, time.time() - started)
+                self.elapsed = min(info.MAX_SECONDS, time.monotonic() - started)
+                if self._job == job and time.monotonic() >= next_prepare:
+                    next_prepare = time.monotonic() + 60
+                    transcribe.prepare()
                 self.notify()
 
             try:
@@ -310,6 +316,7 @@ class AppState:
             if self._job != job:
                 return
             self.recording = False
+            info.log(f"record seconds={self.elapsed:.2f} stop={'user' if self._stop_record else 'limit'}")
             self.finish_wav(wav, job)
 
         threading.Thread(target=work, daemon=True).start()
@@ -321,6 +328,7 @@ class AppState:
         self.phase = "transcribing"
         self.status_line = "받아적는 중"
         self.notify()
+        started = time.monotonic()
         try:
             raw = transcribe.transcribe(wav)
         except Exception as exc:
@@ -332,6 +340,7 @@ class AppState:
             return
         if self._job != job:
             return
+        info.log(f"transcribe seconds={time.monotonic() - started:.2f} raw_chars={len(raw)}")
         if not raw.strip():
             self.phase = "error"
             self.last_error = "말을 못 알아들었어요. 더 가까이서 말해보세요."

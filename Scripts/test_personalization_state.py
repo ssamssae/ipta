@@ -12,6 +12,15 @@ import Foundation
 @main struct StateTests {
  @MainActor static func main() throws {
     let state = AppState()
+    precondition(state.maxSeconds > 75)
+    for phase in [AppPhase.transcribing, .polishing, .downloading, .requestingMic] {
+        state.phase = phase
+        state.transcript = "완성 중인 긴 문장"
+        state.toggle(fromHotkey: true)
+        precondition(state.phase == phase && state.transcript == "완성 중인 긴 문장")
+    }
+    state.phase = .idle
+    state.transcript = ""
     state.addVocabulary(heard: "입 타", spelling: "입타")
     precondition(state.personalization.vocabulary.count == 1)
     state.addVocabulary(heard: "입 타", spelling: "다른값")

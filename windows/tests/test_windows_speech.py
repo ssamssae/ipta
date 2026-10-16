@@ -15,7 +15,7 @@ def main() -> int:
     failed = 0
     failed += check("strip lead filler", speech.clean("음 오늘 날씨") == "오늘 날씨")
     failed += check("drop repeat", speech.clean("바로 바로 가자") == "바로 가자")
-    failed += check("keep last intent", speech.clean("이걸로 아니라 저걸로 해") == "저걸로 해")
+    failed += check("preserve correction context", speech.clean("이걸로 아니라 저걸로 해") == "이걸로 아니라 저걸로 해")
     failed += check("summarize command", speech.command_from("이거 요약") == "editSelection")
     failed += check("long spoken stays polish", speech.command_from("오늘 회의 내용 전부 정리해서 보내") == "polishSpoken")
     failed += check("reject invented hangul", not speech.keeps_spoken_facts("김치찌개 먹자", "오늘 회의"))

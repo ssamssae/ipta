@@ -31,7 +31,7 @@ def run_selftest() -> int:
     parsed = polish.parse_text("openai", '{"choices":[{"message":{"content":"다듬은 글"}}]}'.encode())
     failed += check("openai parse", parsed == "다듬은 글")
     failed += check("clean fillers", speech.clean("음 그니까 오늘 회의") == "오늘 회의")
-    failed += check("last intent", speech.clean("이거 말고 저걸로") == "저걸로")
+    failed += check("correction context", speech.clean("이거 말고 저걸로") == "이거 말고 저걸로")
     failed += check("edit command", speech.command_from("요약해줘") == "editSelection")
     failed += check("model url allowed", info.url_allowed(info.MODEL_URL))
     failed += check("http rejected", not info.url_allowed("http://huggingface.co/x"))

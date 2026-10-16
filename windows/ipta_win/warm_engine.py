@@ -64,8 +64,8 @@ class WarmEngine:
         except (OSError, ValueError): pass
         finally: responses.put({'error': 'worker_closed'})
 
-    def _receive(self):
-        try: value = self._responses.get(timeout=self.timeout)
+    def _receive(self, timeout=None):
+        try: value = self._responses.get(timeout=self.timeout if timeout is None else timeout)
         except queue.Empty: raise RuntimeError('음성 인식 엔진 응답 시간 초과')
         if not isinstance(value, dict) or value.get('error'): raise RuntimeError('음성 인식 엔진 응답 실패')
         return value
@@ -85,7 +85,7 @@ class WarmEngine:
             try: self._ready(); self._arm_idle()
             except (OSError, RuntimeError): self._stop()
 
-    def transcribe(self, wav: Path) -> str:
+    def transcribe(self, wav: Path, timeout=None) -> str:
         with self._lock:
             if self._idle: self._idle.cancel()
             self._idle_generation += 1
@@ -93,7 +93,7 @@ class WarmEngine:
                 self._ready()
                 self._proc.stdin.write((json.dumps({'wav': str(wav)})+'\n').encode('utf-8'))
                 self._proc.stdin.flush()
-                value = self._receive().get('text')
+                value = self._receive(timeout).get('text')
                 if not isinstance(value, str): raise RuntimeError('음성 인식 결과 형식 오류')
                 self._arm_idle()
                 return value.strip()

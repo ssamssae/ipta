@@ -107,8 +107,8 @@ enum SelfTest {
         check("synthetic same-app fallback refuses other app", !paster.sameAppFallback(other, ghost))
         check("synthetic same-app fallback refuses AXSheet", !paster.sameAppFallback(target(role: "AXSheet"), target(role: "AXSheet")))
         check("synthetic cleaner drops leading filler", SpeechCleaner.clean("어 입타 붙여넣기") == "입타 붙여넣기", SpeechCleaner.clean("어 입타 붙여넣기"))
-        check("synthetic cleaner keeps last intent", SpeechCleaner.clean("빨간색 아니 파란색으로") == "파란색으로", SpeechCleaner.clean("빨간색 아니 파란색으로"))
-        check("synthetic cleaner keeps last intent after 아냐", SpeechCleaner.clean("오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자") == "김치찌개로 하자", SpeechCleaner.clean("오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자"))
+        check("synthetic cleaner preserves correction context", SpeechCleaner.clean("빨간색 아니 파란색으로") == "빨간색 아니 파란색으로")
+        check("synthetic cleaner preserves preceding request", SpeechCleaner.clean("오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자") == "오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자")
         let spoken = "음 어 그니까 오늘 저녁은 뭐 먹지 아냐 김치찌개로 하자"
         check(
             "synthetic invented side dishes are dropped",

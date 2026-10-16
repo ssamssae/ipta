@@ -4,10 +4,21 @@ import os
 import subprocess
 import sys
 import threading
+import wave
 from pathlib import Path
 
 from . import info
 from .winhide import hidden_kwargs
+
+
+def request_timeout(wav: Path, minimum: float = 90.0) -> float:
+    """Allow long recordings to finish on CPU without extending short-job deadlines."""
+    try:
+        with wave.open(str(wav), "rb") as audio:
+            seconds = audio.getnframes() / audio.getframerate()
+        return max(minimum, min(1200.0, seconds * 2 + 30))
+    except (OSError, EOFError, wave.Error, ZeroDivisionError):
+        return minimum
 
 
 def whisper_cli(bundle_dir: Path | None = None) -> Path | None:
@@ -51,7 +62,7 @@ def _cli_transcribe(wav: Path, model: Path | None = None, cli: Path | None = Non
             "-t",
             "4",
         ],
-        timeout=90,
+        timeout=request_timeout(wav),
         capture_output=True,
         check=False,
         cwd=str(binary.parent),
@@ -112,7 +123,7 @@ def transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) ->
     if binary and model_file.is_file():
         try:
             engine = _get_engine(model_file, binary)
-            if engine: return engine.transcribe(wav)
+            if engine: return engine.transcribe(wav, timeout=request_timeout(wav, engine.timeout))
         except (OSError, RuntimeError):
             if generation != _generation: raise RuntimeError("받아쓰기를 취소했습니다")
     return _cli_transcribe(wav, model_file, binary)

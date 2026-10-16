@@ -127,8 +127,8 @@ def record_wav(
         ):
             import time
 
-            started = time.time()
-            while time.time() - started < seconds:
+            started = time.monotonic()
+            while time.monotonic() - started < seconds:
                 if should_stop and should_stop():
                     break
                 time.sleep(0.05)
