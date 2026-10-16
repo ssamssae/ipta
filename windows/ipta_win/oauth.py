@@ -393,7 +393,7 @@ def polish_grok(instructions: str, user: str, bin_path: Path | None) -> str | No
     try:
         profile = Path(directory) / "agent.md"
         profile.write_text("---\nname: ipta-polish\ndescription: Korean dictation cleanup\ntools: []\n---\n" + instructions, encoding="utf-8")
-        flags = ["-p", user, "--tools", "", "--disable-web-search", "--no-subagents", "--max-turns", "1", "--reasoning-effort", "low", "--output-format", "stream-json"]
+        flags = ["-p", user, "--tools", "", "--disable-web-search", "--no-subagents", "--max-turns", "1", "--reasoning-effort", "low", "--output-format", "streaming-messages-json"]
         env = os.environ.copy()
         env.update(grok_environment())
         if bin_path is not None:
