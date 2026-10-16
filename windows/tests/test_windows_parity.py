@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, subprocess, sys, tempfile, threading, time, unittest
+import json, os, re, subprocess, sys, tempfile, threading, time, unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 from ipta_win import personalization, selection, grok_stream, oauth, transcribe
@@ -126,6 +126,24 @@ class ProcessTests(unittest.TestCase):
                 event=threading.Event()
                 with self.assertRaises(oauth.CliFailure): grok_stream.run([sys.executable,'-c',body],timeout=.15,cleanup=event.set)
                 self.assertTrue(event.wait(6))
+
+    def test_grok_polish_asks_for_the_output_format_the_mac_app_uses(self):
+        # grok CLI 1.0.61 rejects 'stream-json' before sending anything; the Mac app asks for
+        # 'streaming-messages-json', whose last line is the type=result event grok_stream reads.
+        swift=(Path(__file__).resolve().parents[2]/'App/Sources/OAuthCLI.swift').read_text(encoding='utf-8')
+        mac=re.search(r'"--agent", profile\.path,[^\n]*"--output-format", "([^"]+)"',swift).group(1)
+        self.assertEqual(mac,'streaming-messages-json')
+        calls=[]
+        def grok(argv,**kwargs):
+            calls.append(argv);kwargs['cleanup']()
+            return json.dumps({'text':'다듬음'})
+        with patch.object(oauth,'run_grok_stream',side_effect=grok):
+            self.assertEqual(oauth.polish_grok('지시','말',Path('grok.exe')),'다듬음')
+            with patch.object(oauth,'wsl_exe',return_value='wsl.exe'):
+                self.assertEqual(oauth.polish_grok('지시','말',None),'다듬음')
+        native,wsl=calls
+        self.assertEqual(native[native.index('--output-format')+1],mac)
+        self.assertIn('--output-format '+mac,wsl[-1])
 
 
 if __name__=='__main__':unittest.main()
