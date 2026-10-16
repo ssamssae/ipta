@@ -19,6 +19,9 @@ final class AppState: ObservableObject {
     @Published var transcript = ""
     @Published var rawTranscript = ""
     @Published var polishEnabled = true
+    /// 녹음하는 동안 맥 출력을 잠시 음소거(기본 꺼짐). 원래 음소거 상태는 끝나면 되돌린다.
+    @Published var muteBackgroundAudio = false
+    private let outputMute = OutputMute()
     @Published var polishPlan = PolishPlan.load()
     @Published var polishKeyDraft = ""
     @Published var lastError = ""
@@ -97,6 +100,7 @@ final class AppState: ObservableObject {
         if UserDefaults.standard.object(forKey: "malgyeol.polish") != nil {
             polishEnabled = UserDefaults.standard.bool(forKey: "malgyeol.polish")
         }
+        muteBackgroundAudio = UserDefaults.standard.bool(forKey: "malgyeol.muteBackgroundAudio")
         polishPlan = PolishPlan.load()
         polishPlan.save()
         polishKeyDraft = ""
@@ -295,6 +299,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
+            if muteBackgroundAudio { outputMute.mute() }
             transcriber.prepare()
             recording = true
             phase = .recording
@@ -311,6 +316,7 @@ final class AppState: ObservableObject {
     func cancel() {
         let job = jobs.bump()
         recorder.cancel()
+        outputMute.restore()
         transcriber.cancel()
         polisher.cancel()
         models.cancel()
@@ -331,6 +337,7 @@ final class AppState: ObservableObject {
         recording = false
         let job = jobs.value
         let url: URL
+        outputMute.restore()
         do {
             url = try recorder.stop()
         } catch {
@@ -402,6 +409,12 @@ final class AppState: ObservableObject {
     func setPolishEnabled(_ on: Bool) {
         polishEnabled = on
         UserDefaults.standard.set(on, forKey: "malgyeol.polish")
+    }
+
+    func setMuteBackgroundAudio(_ on: Bool) {
+        muteBackgroundAudio = on
+        UserDefaults.standard.set(on, forKey: "malgyeol.muteBackgroundAudio")
+        if !on { outputMute.restore() }
     }
 
     func setPolishTier(_ tier: PolishTier) {

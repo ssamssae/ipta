@@ -275,6 +275,10 @@ enum SelfTest {
             MicPolicy.pick(selected: "LiveSpeech", devices: [liveSpeech, builtInMic], lidClosed: false).reason == .chosen
         )
         check(
+            "synthetic output mute leaves an already muted Mac alone",
+            !OutputMute.shouldMute(wasMuted: true) && OutputMute.shouldMute(wasMuted: false)
+        )
+        check(
             "synthetic real default is followed",
             MicPolicy.pick(selected: "", devices: [AudioInputDevice(id: "AU05", name: "Vibe", kind: .usb, isSystemDefault: true), builtInMic], lidClosed: false).uid == "AU05"
         )
