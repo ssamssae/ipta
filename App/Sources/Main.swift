@@ -73,6 +73,9 @@ enum MalgyeolMain {
             let code = SelfTest.run()
             exit(code)
         }
+        if args.contains("--mic-probe") {
+            exit(Recorder.runProbe())
+        }
         if args.contains("--download-model") {
             _ = NSApplication.shared
             let cancelMs = intArg(args, flag: "--cancel-ms")

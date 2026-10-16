@@ -264,6 +264,20 @@ enum SelfTest {
             "synthetic missing mic falls back to the Mac default",
             AppState.resolveDevice(saved: "Gone", available: ["BlackHole2ch_UID"]) == ""
         )
+        let liveSpeech = AudioInputDevice(id: "LiveSpeech", name: "실시간 말하기", kind: .virtual, isSystemDefault: true)
+        let builtInMic = AudioInputDevice(id: "BuiltInMicrophoneDevice", name: "내장 마이크", kind: .builtIn, isSystemDefault: false)
+        check(
+            "synthetic virtual default is replaced by a real mic",
+            MicPolicy.pick(selected: "", devices: [liveSpeech, builtInMic], lidClosed: false).uid == "BuiltInMicrophoneDevice"
+        )
+        check(
+            "synthetic chosen virtual mic is respected",
+            MicPolicy.pick(selected: "LiveSpeech", devices: [liveSpeech, builtInMic], lidClosed: false).reason == .chosen
+        )
+        check(
+            "synthetic real default is followed",
+            MicPolicy.pick(selected: "", devices: [AudioInputDevice(id: "AU05", name: "Vibe", kind: .usb, isSystemDefault: true), builtInMic], lidClosed: false).uid == "AU05"
+        )
         check(
             "synthetic bundle is not menubar-only",
             (Bundle.main.object(forInfoDictionaryKey: "LSUIElement") as? Bool) != true
