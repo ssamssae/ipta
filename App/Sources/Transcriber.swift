@@ -1,4 +1,5 @@
 import Foundation
+import AVFAudio
 
 struct TranscribeError: Error {
     let message: String
@@ -66,7 +67,7 @@ final class Transcriber: @unchecked Sendable {
                 return
             }
             if self.ensureWorker(job: job), let worker = self.worker {
-                let deadline = self.watchdog(worker)
+                let deadline = self.watchdog(worker, seconds: self.requestTimeout(wav: wav))
                 defer { deadline.cancel() }
                 do {
                     let data = try JSONSerialization.data(withJSONObject: ["wav": wav.path])
@@ -102,13 +103,19 @@ final class Transcriber: @unchecked Sendable {
         return true
     }
 
-    private func watchdog(_ process: Process) -> DispatchWorkItem {
+    func requestTimeout(wav: URL) -> TimeInterval {
+        guard let audio = try? AVAudioFile(forReading: wav), audio.fileFormat.sampleRate > 0 else { return timeout }
+        let seconds = Double(audio.length) / audio.fileFormat.sampleRate
+        return max(timeout, min(1200, seconds * 2 + 30))
+    }
+
+    private func watchdog(_ process: Process, seconds: TimeInterval? = nil) -> DispatchWorkItem {
         let work = DispatchWorkItem { [weak self, weak process] in
             guard let self, let process else { return }
             self.lock.lock(); defer { self.lock.unlock() }
             if self.proc === process, process.isRunning { process.terminate() }
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: work)
+        DispatchQueue.global().asyncAfter(deadline: .now() + (seconds ?? timeout), execute: work)
         return work
     }
 
@@ -189,7 +196,7 @@ final class Transcriber: @unchecked Sendable {
             guard try launch(process, job: job) else {
                 return .failure(TranscribeError(message: "취소됨"))
             }
-            let deadline = watchdog(process)
+            let deadline = watchdog(process, seconds: requestTimeout(wav: wav))
             defer { deadline.cancel() }
             // Drain while the child runs so long output cannot fill a pipe and deadlock.
             let data = pipe.fileHandleForReading.readDataToEndOfFile()

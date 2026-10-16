@@ -210,7 +210,7 @@ def make_request(provider: str, key: str, model: str, system: str, user: str) ->
         headers["anthropic-version"] = "2023-06-01"
         body: dict[str, Any] = {
             "model": model,
-            "max_tokens": 220,
+            "max_tokens": max(220, min(8192, len(user) * 3 + 64)),
             "system": system,
             "messages": [{"role": "user", "content": user}],
         }
@@ -220,7 +220,7 @@ def make_request(provider: str, key: str, model: str, system: str, user: str) ->
         body = {
             "model": model,
             "temperature": 0.2,
-            "max_tokens": 220,
+            "max_tokens": max(220, min(8192, len(user) * 3 + 64)),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -238,6 +238,8 @@ def parse_text(provider: str, data: bytes) -> str | None:
     if not isinstance(obj, dict):
         return None
     if provider == "claude":
+        if obj.get("stop_reason") in ("max_tokens", "refusal", "pause_turn"):
+            return None
         content = obj.get("content")
         if not isinstance(content, list):
             return None
@@ -247,6 +249,8 @@ def parse_text(provider: str, data: bytes) -> str | None:
     if provider in ("grok", "openai", "local"):
         choices = obj.get("choices")
         if not isinstance(choices, list) or not choices:
+            return None
+        if isinstance(choices[0], dict) and choices[0].get("finish_reason") in ("length", "content_filter", "tool_calls"):
             return None
         msg = choices[0].get("message") if isinstance(choices[0], dict) else None
         if not isinstance(msg, dict):

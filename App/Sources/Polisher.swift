@@ -17,12 +17,12 @@ enum SpeechCommand: Equatable {
 }
 
 enum SpeechCleaner {
-    /// Instant, local cleanup in the Typeless style: fillers, repeats, last intent.
+    /// Local cleanup must preserve preceding sentences, negations and requests.
     static func clean(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.isEmpty { return s }
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        for pat in [#"^(음+|어+|아+|에+|그+)(?:\s+|$)"#, #"(?<![\p{L}\p{N}_])(음+|어+)\s+"#] {
+        for pat in [#"^(음+|어+|아+|에+)(?:\s+|$)"#, #"(?<![\p{L}\p{N}_])(음+|어+)\s+"#] {
             s = s.replacingOccurrences(of: pat, with: "", options: .regularExpression)
         }
         s = s.replacingOccurrences(
@@ -30,7 +30,6 @@ enum SpeechCleaner {
             with: " ", options: .regularExpression
         )
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        s = keepLastIntent(s)
         s = dropImmediateRepeats(s)
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -54,21 +53,11 @@ enum SpeechCleaner {
             ? .editSelection : .polishSpoken
     }
 
-    private static func keepLastIntent(_ s: String) -> String {
-        for sep in [" 아니라 ", " 아니야 ", " 아냐 ", " 아니 ", " 말고 "] {
-            if let r = s.range(of: sep, options: .backwards) {
-                let tail = s[r.upperBound...].trimmingCharacters(in: .whitespaces)
-                if tail.count >= 2 { return String(tail) }
-            }
-        }
-        return s
-    }
-
     private static func dropImmediateRepeats(_ s: String) -> String {
         let parts = s.split(separator: " ").map(String.init)
         guard parts.count >= 2 else { return s }
         var out: [String] = []
-        for w in parts where out.last != w {
+        for w in parts where out.last != w || !numericTokens(w).isEmpty {
             out.append(w)
         }
         return out.joined(separator: " ")
@@ -79,6 +68,8 @@ enum SpeechCleaner {
         if polished.contains("**") { return false }
         guard numericTokens(polished) == numericTokens(source) else { return false }
         let compact = source.replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        let outputCount = polished.replacingOccurrences(of: "\\s+", with: "", options: .regularExpression).count
+        if compact.count >= 80 && Double(outputCount) < Double(compact.count) * 0.85 { return false }
         let novel = hangulRuns(polished).filter { tok in
             tok.count >= 2 && !compact.contains(tok)
         }

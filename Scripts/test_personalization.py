@@ -26,6 +26,23 @@ func malgyeolLog(_ text: String) {}
     precondition(SpeechCleaner.clean("어도비로 작업해") == "어도비로 작업해")
     precondition(SpeechCleaner.clean("어 작업해") == "작업해")
     precondition(SpeechCleaner.clean("플레이어 단어 음악") == "플레이어 단어 음악")
+    let allSentences = "첫 번째 설정을 확인해 줘. 두 번째 기록도 확인해 줘. 수정은 말고 원인만 찾아줘."
+    precondition(SpeechCleaner.clean(allSentences) == allSentences)
+    for separator in ["아니", "아니야", "아냐", "아니라"] {
+        let text = "앞의 요청을 모두 기록해. \(separator) 추가 요청도 뒤에 기록해."
+        precondition(SpeechCleaner.clean(text) == text)
+    }
+    precondition(SpeechCleaner.clean("수량은 10 10 20개야") == "수량은 10 10 20개야")
+    precondition(SpeechCleaner.clean("그 사람의 요청도 보존해 줘") == "그 사람의 요청도 보존해 줘")
+    let longSpeech = String(repeating: "첫 번째 설정을 확인하고 기록을 보존해 주세요. ", count: 12) + "마지막 요청도 남겨 주세요."
+    precondition(!SpeechCleaner.keepsSpokenFacts(String(longSpeech.prefix(90)), source: longSpeech))
+    let partial = Data(#"{"choices":[{"finish_reason":"length","message":{"content":"문장의 앞부분"}}]}"#.utf8)
+    precondition(PolishAPI.parseText(provider: .local, data: partial) == nil)
+    let claudePartial = Data(#"{"stop_reason":"max_tokens","content":[{"text":"문장의 앞부분"}]}"#.utf8)
+    precondition(PolishAPI.parseText(provider: .claude, data: claudePartial) == nil)
+    let request = PolishAPI.makeRequest(provider: .local, key: "", model: "existing-model", system: "preserve words", user: longSpeech)!
+    let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String:Any]
+    precondition(body["max_tokens"] as! Int > 220)
     p.tones = [AppToneRule(bundleID: "test.mail", name: "Mail", tone: .polite)]
     precondition(p.tone(for: "test.mail") == .polite && p.tone(for: "test.chat") == .original)
     precondition(p.instructions(for: "test.mail").contains("존댓말"))

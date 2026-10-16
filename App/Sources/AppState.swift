@@ -211,8 +211,8 @@ final class AppState: ObservableObject {
         case .recording:
             stopAndTranscribe()
         case .downloading, .transcribing, .polishing, .requestingMic:
-            cancel()
-            start(fromHotkey: fromHotkey)
+            // The explicit cancel key/button remains available during processing.
+            return
         default:
             start(fromHotkey: fromHotkey)
         }
@@ -221,7 +221,6 @@ final class AppState: ObservableObject {
     func start(fromHotkey: Bool) {
         lastError = ""
         let job = jobs.bump()
-        transcriber.cancel()
         cleanupWav()
         if fromHotkey {
             lockedTarget = TargetLock.capture()
@@ -267,13 +266,18 @@ final class AppState: ObservableObject {
 
     private func actuallyRecord(job: UInt64) {
         guard jobs.isCurrent(job) else { return }
+        var nextPrepare: Double = 60
         do {
             try recorder.start(deviceId: selectedDeviceId) { [weak self] level, elapsed in
                 Task { @MainActor in
-                    guard let self, self.jobs.isCurrent(job) else { return }
+                    guard let self, self.jobs.isCurrent(job), self.phase == .recording else { return }
                     self.level = level
                     self.elapsed = elapsed
                     self.statusLine = String(format: "듣는 중 %.0f초 / %.0f초", elapsed, MalgyeolInfo.maxSeconds)
+                    if elapsed >= nextPrepare {
+                        nextPrepare = elapsed + 60
+                        self.transcriber.prepare()
+                    }
                     if elapsed >= MalgyeolInfo.maxSeconds {
                         self.stopAndTranscribe()
                     }
@@ -311,6 +315,7 @@ final class AppState: ObservableObject {
 
     func stopAndTranscribe() {
         guard recording || phase == .recording else { return }
+        malgyeolLog("record seconds=\(String(format: "%.2f", elapsed)) stop=\(elapsed >= maxSeconds ? "limit" : "user")")
         recording = false
         let job = jobs.value
         let url: URL

@@ -25,7 +25,7 @@ struct RecordingHUDView: View {
                 identifier: "malgyeol-hud-stop",
                 prominent: state.recording,
                 danger: state.recording,
-                action: { state.toggle(fromHotkey: true) }
+                action: { state.recording ? state.stopAndTranscribe() : state.cancel() }
             )
             .frame(width: 56, height: 22)
         }
@@ -42,7 +42,9 @@ struct RecordingHUDView: View {
 
     private var subtitle: String {
         if state.recording {
-            return String(format: "%.0f초 · 같은 키로 멈춤", state.elapsed)
+            let remaining = state.maxSeconds - state.elapsed
+            if remaining <= 30 { return String(format: "%.0f초 뒤 자동 정지", max(0, remaining)) }
+            return String(format: "%.0f초 · 최대 10분", state.elapsed)
         }
         return "잠시만요"
     }
