@@ -10,6 +10,13 @@
 ## ggml
 - whisper.cpp에 포함. MIT.
 
+## Windows 말소리 판별: Silero VAD
+- 라이선스: MIT (https://github.com/snakers4/silero-vad)
+- 변환본: https://huggingface.co/ggml-org/whisper-vad
+- 모델: `ggml-silero-v5.1.2.bin`, revision `9ffd54a1e1ee413ddf265af9913beaf518d1639b`
+- SHA-256: `29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf`
+- EXE에 포함하며 이 컴퓨터에서만 사용합니다. 녹음·받아쓰기 모델·AI 계정 설정은 바꾸지 않습니다.
+
 ## OpenAI Whisper / ggml-small.bin
 - 원 가중치: MIT (https://github.com/openai/whisper)
 - 변환본: https://huggingface.co/ggerganov/whisper.cpp (`ggml-small.bin`)

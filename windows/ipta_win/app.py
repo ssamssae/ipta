@@ -342,9 +342,10 @@ class AppState:
             return
         info.log(f"transcribe seconds={time.monotonic() - started:.2f} raw_chars={len(raw)}")
         if not raw.strip():
-            self.phase = "error"
-            self.last_error = "말을 못 알아들었어요. 더 가까이서 말해보세요."
-            self.status_line = "알아들은 내용이 없어 이전 결과를 유지했습니다" if self.transcript else "받아적기 실패"
+            self.phase = "idle"
+            self.last_error = ""
+            self.last_paste_note = ""
+            self.status_line = "말소리가 없어 이전 결과를 유지했습니다" if self.transcript else "말소리가 없어 입력하지 않았습니다"
             self.notify()
             info.log("done used_model=False chars=0 empty-transcript")
             return

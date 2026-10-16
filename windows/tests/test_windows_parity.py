@@ -87,6 +87,12 @@ class ProcessTests(unittest.TestCase):
         engine.prepare();one=engine.transcribe(Path('a'));two=engine.transcribe(Path('b'))
         self.assertEqual(one,two);engine.cancel();self.assertNotEqual(one,engine.transcribe(Path('c')))
 
+    def test_old_worker_cannot_silently_skip_required_voice_detection(self):
+        engine=self.engine('import sys,json\nprint(json.dumps({"ready":True}),flush=True)\nfor line in sys.stdin: print(json.dumps({"text":"hallucination"}),flush=True)',vad_model=self.root/'vad.bin')
+        with self.assertRaisesRegex(RuntimeError, '말소리 확인'):
+            engine.transcribe(Path('silent.wav'))
+        self.assertIsNone(engine._proc)
+
     def test_idle_expiration_and_stale_timer(self):
         engine=self.engine('import os,sys,json\nprint(json.dumps({"ready":True}),flush=True)\nfor line in sys.stdin: print(json.dumps({"text":str(os.getpid())}),flush=True)',idle_timeout=.15)
         one=engine.transcribe(Path('a'));old=engine._idle_generation

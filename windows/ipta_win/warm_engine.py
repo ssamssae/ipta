@@ -10,9 +10,10 @@ from .winhide import hidden_kwargs
 
 
 class WarmEngine:
-    def __init__(self, worker: Path, model: Path, timeout=60.0, idle_timeout=90.0, command=None):
+    def __init__(self, worker: Path, model: Path, timeout=60.0, idle_timeout=90.0, command=None, vad_model: Path | None = None):
         self.worker, self.model = worker, model
-        self.command = command or [str(worker), str(model)]
+        self.vad_model = vad_model
+        self.command = command or [str(worker), str(model), *([str(vad_model)] if vad_model else [])]
         self.timeout, self.idle_timeout = timeout, idle_timeout
         self._lock = threading.Lock()
         self._proc = None
@@ -78,7 +79,10 @@ class WarmEngine:
                                       cwd=str(self.worker.parent), **hidden_kwargs())
         self._responses = queue.Queue()
         threading.Thread(target=self._read, args=(self._proc, self._responses), daemon=True).start()
-        if self._receive().get('ready') is not True: raise RuntimeError('음성 인식 엔진 준비 실패')
+        ready = self._receive()
+        if ready.get('ready') is not True: raise RuntimeError('음성 인식 엔진 준비 실패')
+        if self.vad_model is not None and ready.get('vad') is not True:
+            raise RuntimeError('말소리 확인 엔진 준비 실패')
 
     def prepare(self):
         with self._lock:
