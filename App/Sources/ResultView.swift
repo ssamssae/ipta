@@ -201,6 +201,10 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Toggle("녹음하는 동안 맥 소리 끄기 (음악·알림)", isOn: Binding(
+                    get: { state.muteBackgroundAudio },
+                    set: { state.setMuteBackgroundAudio($0) }
+                ))
                 HStack {
                     Text("상태: \(state.micStatus)")
                         .font(.caption)
