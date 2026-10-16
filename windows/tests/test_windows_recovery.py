@@ -54,7 +54,7 @@ class RecoveryTests(unittest.TestCase):
             args = run.call_args.args[0]
             self.assertEqual(args[args.index('--tools')+1], '')
             self.assertEqual(args[args.index('--reasoning-effort')+1], 'low')
-            self.assertEqual(run.call_args.kwargs['timeout'], 15)
+            self.assertEqual(run.call_args.kwargs['timeout'], 30)
 
     def test_clipboard_transfers_full_pointer_and_ownership(self):
         handle, pointer, owner = 0x123456789ABC, 0x23456789ABCD, 555

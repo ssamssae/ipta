@@ -145,5 +145,22 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(native[native.index('--output-format')+1],mac)
         self.assertIn('--output-format '+mac,wsl[-1])
 
+    def test_grok_polish_waits_long_enough_for_a_real_grok_reply(self):
+        # Apollo 2026-10-17: a real grok polish ran past 15s (WSL start + ~10-12s reply) and was cut
+        # off, leaving invalid_output. Both the WSL inner timeout and the outer wait must allow 30s.
+        timeouts=[]
+        def grok(argv,timeout,**kwargs):
+            timeouts.append((argv,timeout));kwargs['cleanup']()
+            return json.dumps({'text':'다듬음'})
+        with patch.object(oauth,'run_grok_stream',side_effect=grok):
+            oauth.polish_grok('지시','말',Path('grok.exe'))
+            with patch.object(oauth,'wsl_exe',return_value='wsl.exe'):
+                oauth.polish_grok('지시','말',None)
+        (_,native),(wsl,outer)=timeouts
+        self.assertGreaterEqual(native,30)
+        inner=float(re.search(r"timeout --kill-after=2s (\d+)s grok",wsl[-1]).group(1))
+        self.assertGreaterEqual(inner,30)
+        self.assertGreater(outer,inner)
+
 
 if __name__=='__main__':unittest.main()
