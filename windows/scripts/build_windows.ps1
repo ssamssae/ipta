@@ -3,6 +3,12 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 if (!(Test-Path "Helpers/whisper-cli.exe")) { throw "Place whisper-cli.exe and its DLLs in windows/Helpers first" }
+$VadModel = "Helpers/ggml-silero-v5.1.2.bin"
+$VadHash = "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf"
+if (!(Test-Path $VadModel)) {
+    Invoke-WebRequest -Uri "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v5.1.2.bin" -OutFile $VadModel
+}
+if ((Get-FileHash $VadModel -Algorithm SHA256).Hash.ToLower() -ne $VadHash) { throw "Voice detection model hash mismatch" }
 python -m pip install -r requirements-windows.txt pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "Dependency install failed" }
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name "Ipta-$Version-windows" --icon ipta.ico --add-data "ipta.ico;." --add-binary "Helpers/*;Helpers" ipta_win/__main__.py

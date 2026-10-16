@@ -57,18 +57,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(diagnostics)
                     if not ok:
                         return 1
-                    from ipta_win.warm_engine import WarmEngine
-                    worker = binary.with_name("ipta-transcriber.exe")
-                    engine = WarmEngine(worker, args.selftest_model)
-                    try:
-                        first = engine.transcribe(args.selftest_audio)
-                        pid = engine._proc.pid
-                        second = engine.transcribe(args.selftest_audio)
-                        reused = bool(first and second) and engine._proc.pid == pid
-                        print("PASS bundled warm worker reused" if reused else "FAIL bundled warm worker")
-                        return int(not reused)
-                    finally:
-                        engine.cancel()
+                    from ipta_win.voice_selftest import run as test_voice
+                    return int(test_voice(binary, args.selftest_model, args.selftest_audio) != 0)
                 return 0
     if args.selftest:
         return run_selftest()

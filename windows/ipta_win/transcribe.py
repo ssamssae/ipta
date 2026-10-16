@@ -1,15 +1,29 @@
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import sys
+import tempfile
 import threading
 import wave
 from pathlib import Path
 
 from . import info
 from .winhide import hidden_kwargs
+
+VAD_MODEL_NAME = "ggml-silero-v5.1.2.bin"
+
+
+def vad_model_path(binary: Path) -> Path:
+    model = binary.with_name(VAD_MODEL_NAME)
+    if not model.is_file():
+        raise RuntimeError("말소리 확인 파일이 없습니다. 입타를 다시 설치하세요.")
+    return model
+
+
+def vad_cli_args(binary: Path) -> list[str]:
+    return ["--vad", "--vad-model", str(vad_model_path(binary)),
+            "--vad-min-speech-duration-ms", "100"]
 
 
 def request_timeout(wav: Path, minimum: float = 90.0) -> float:
@@ -45,41 +59,25 @@ def _cli_transcribe(wav: Path, model: Path | None = None, cli: Path | None = Non
     model_file = model or info.model_path()
     if not model_file.is_file():
         raise RuntimeError("모델 파일이 없습니다. 창에서 모델을 받으세요.")
-    out_base = wav.with_suffix("")
-    proc = subprocess.run(
-        [
-            str(binary),
-            "-m",
-            str(model_file),
-            "-f",
-            str(wav),
-            "-l",
-            "ko",
-            "-nt",
-            "-np",
-            "-otxt",
-            "-of",
-            str(out_base),
-            "-t",
-            "4",
-        ],
-        timeout=request_timeout(wav),
-        capture_output=True,
-        check=False,
-        cwd=str(binary.parent),
-        env={**os.environ, "HOME": str(Path.home())},
-        **hidden_kwargs(),
-    )
-    stdout = (proc.stdout or b"").decode("utf-8", errors="replace")
-    stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
-    if proc.returncode != 0:
-        raise RuntimeError(f"whisper-cli 종료 {proc.returncode}: {stderr[-400:]}")
-    txt = Path(str(out_base) + ".txt")
-    if txt.is_file():
-        file_text = txt.read_text(encoding="utf-8", errors="replace").strip()
-        if file_text:
-            return file_text
-    return stdout.strip()
+    # A fresh output path prevents an empty result from reusing an earlier transcript.
+    with tempfile.TemporaryDirectory(prefix="ipta-transcribe-") as folder:
+        out_base = Path(folder) / "result"
+        proc = subprocess.run(
+            [str(binary), "-m", str(model_file), "-f", str(wav), "-l", "ko",
+             "-nt", "-np", "-otxt", "-of", str(out_base), "-t", "4",
+             *vad_cli_args(binary)],
+            timeout=request_timeout(wav), capture_output=True, check=False,
+            cwd=str(binary.parent), env={**os.environ, "HOME": str(Path.home())},
+            **hidden_kwargs(),
+        )
+        stdout = (proc.stdout or b"").decode("utf-8", errors="replace")
+        stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
+        if proc.returncode != 0:
+            raise RuntimeError(f"whisper-cli 종료 {proc.returncode}: {stderr[-400:]}")
+        txt = Path(str(out_base) + ".txt")
+        if txt.is_file():
+            return txt.read_text(encoding="utf-8", errors="replace").strip()
+        return stdout.strip()
 
 
 _engine = None
@@ -93,11 +91,12 @@ def _get_engine(model: Path, binary: Path):
     global _engine, _engine_key
     worker = binary.with_name("ipta-transcriber.exe" if sys.platform == "win32" else "ipta-transcriber")
     if not worker.is_file(): return None
-    key = (str(worker), str(model), model.stat().st_mtime_ns)
+    vad = vad_model_path(binary)
+    key = (str(worker), str(model), model.stat().st_mtime_ns, str(vad), vad.stat().st_mtime_ns)
     with _pool_lock:
         if key != _engine_key:
             if _engine: _engine.cancel()
-            _engine, _engine_key = WarmEngine(worker, model), key
+            _engine, _engine_key = WarmEngine(worker, model, vad_model=vad), key
         return _engine
 
 
@@ -108,7 +107,7 @@ def prepare() -> None:
             if binary and model.is_file():
                 engine = _get_engine(model, binary)
                 if engine: engine.prepare()
-        except OSError: pass
+        except (OSError, RuntimeError): pass
     threading.Thread(target=work, daemon=True).start()
 
 
@@ -118,26 +117,8 @@ def cancel() -> None:
     if _engine: _engine.cancel()
 
 
-# whisper says these on silence (TV-subtitle training data). Only a whole transcript that is just one
-# of them is dropped, so real speech that mentions the phrase still goes through.
-_SILENCE_HALLUCINATIONS = re.compile(
-    r"(?:MBC|KBS|SBS|YTN|JTBC|TV조선|채널A|MBN|연합)\s*뉴스\s*\S{2,4}\s*(?:입니다|기자입니다)"
-    r"|(?:오늘도\s*)?시청(?:해\s*주셔서|해주셔서)\s*감사(?:합니다|드립니다)"
-    r"|구독(?:과|,)?\s*좋아요(?:\s*(?:부탁|눌러)\S*)?"
-    r"|다음\s*(?:영상|시간)에서\s*(?:만나요|뵙겠습니다)"
-)
-
-
-def drop_silence_hallucination(text: str) -> str:
-    core = re.sub(r"[\s.,!?~…·]+$|^[\s.,!?~…·]+", "", text or "")
-    if core and _SILENCE_HALLUCINATIONS.fullmatch(core):
-        info.log(f"transcribe dropped silence-hallucination chars={len(text)}")
-        return ""
-    return text
-
-
 def transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) -> str:
-    return drop_silence_hallucination(_raw_transcribe(wav, model, cli))
+    return _raw_transcribe(wav, model, cli)
 
 
 def _raw_transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) -> str:

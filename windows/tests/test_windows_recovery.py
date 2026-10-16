@@ -14,25 +14,22 @@ class RecoveryTests(unittest.TestCase):
     def test_silence_preserves_previous_result_and_raw(self):
         state = AppState()
         state.transcript, state.raw_transcript = 'previous result', 'previous raw'
-        with patch('ipta_win.app.transcribe.transcribe', return_value='  '):
+        state.last_paste_note = 'previous paste'
+        with patch('ipta_win.app.transcribe.transcribe', return_value='  '), patch('ipta_win.app.paste.paste_into_foreground') as pasted, patch.object(state, 'polish_text') as polished, patch.object(state.personal, 'remember') as remembered:
             state.finish_wav(Path('/unused-fixture.wav'), state._job)
+        pasted.assert_not_called()
+        polished.assert_not_called()
+        remembered.assert_not_called()
         self.assertEqual((state.transcript,state.raw_transcript),('previous result','previous raw'))
         self.assertIn('이전 결과',state.status_line)
+        self.assertEqual((state.phase, state.last_error), ('idle', ''))
+        self.assertEqual(state.last_paste_note, '')
 
-    def test_silence_hallucination_is_not_pasted(self):
-        # Zeus 2026-10-17: a 1.67s silent recording came back as 'MBC 뉴스 이준범입니다.' and was pasted.
-        for heard in ('MBC 뉴스 이준범입니다.', ' MBC뉴스 김성현입니다 ', '시청해주셔서 감사합니다.', '구독과 좋아요 부탁드립니다!'):
-            state = AppState()
-            state.transcript, state.raw_transcript = 'previous result', 'previous raw'
-            with patch('ipta_win.app.transcribe._raw_transcribe', return_value=heard), patch('ipta_win.app.paste.paste_into_foreground') as pasted:
-                state.finish_wav(Path('/unused-fixture.wav'), state._job)
-            pasted.assert_not_called()
-            self.assertEqual((state.transcript,state.raw_transcript),('previous result','previous raw'), heard)
-
-    def test_real_speech_mentioning_the_phrase_is_kept(self):
+    def test_real_spoken_phrases_are_not_blacklisted(self):
         from ipta_win import transcribe
-        for said in ('어제 MBC 뉴스 이준범입니다 하는 거 봤어', '방송 시청해주셔서 감사합니다 라고 끝내줘'):
-            self.assertEqual(transcribe.drop_silence_hallucination(said), said)
+        for said in ('감사합니다.', 'MBC 뉴스 이준범입니다.', '시청해주셔서 감사합니다.', '네'):
+            with patch.object(transcribe, '_raw_transcribe', return_value=said):
+                self.assertEqual(transcribe.transcribe(Path('/voiced-fixture.wav')), said)
 
     def test_registered_spelling_changes_are_rejected(self):
         state = AppState(polish_enabled=True, polish_plan=polish.PolishPlan(tier='connected', provider='grok', auth_mode='oauth'))
