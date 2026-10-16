@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -117,7 +118,29 @@ def cancel() -> None:
     if _engine: _engine.cancel()
 
 
+# whisper says these on silence (TV-subtitle training data). Only a whole transcript that is just one
+# of them is dropped, so real speech that mentions the phrase still goes through.
+_SILENCE_HALLUCINATIONS = re.compile(
+    r"(?:MBC|KBS|SBS|YTN|JTBC|TV조선|채널A|MBN|연합)\s*뉴스\s*\S{2,4}\s*(?:입니다|기자입니다)"
+    r"|(?:오늘도\s*)?시청(?:해\s*주셔서|해주셔서)\s*감사(?:합니다|드립니다)"
+    r"|구독(?:과|,)?\s*좋아요(?:\s*(?:부탁|눌러)\S*)?"
+    r"|다음\s*(?:영상|시간)에서\s*(?:만나요|뵙겠습니다)"
+)
+
+
+def drop_silence_hallucination(text: str) -> str:
+    core = re.sub(r"[\s.,!?~…·]+$|^[\s.,!?~…·]+", "", text or "")
+    if core and _SILENCE_HALLUCINATIONS.fullmatch(core):
+        info.log(f"transcribe dropped silence-hallucination chars={len(text)}")
+        return ""
+    return text
+
+
 def transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) -> str:
+    return drop_silence_hallucination(_raw_transcribe(wav, model, cli))
+
+
+def _raw_transcribe(wav: Path, model: Path | None = None, cli: Path | None = None) -> str:
     generation = _generation
     model_file, binary = model or info.model_path(), cli or whisper_cli()
     if binary and model_file.is_file():
