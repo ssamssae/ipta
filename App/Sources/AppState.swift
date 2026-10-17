@@ -26,6 +26,15 @@ final class AppState: ObservableObject {
     private var lockedContextBefore = ""
     /// 마지막으로 결과를 넣으려던 칸. 「다시 넣기」가 쓴다.
     private var lastPasteTarget: LockedTarget?
+    /// 30초 넘는 녹음은 말하는 동안 구간을 잘라 미리 받아적는다(기본 켬). 짧은 녹음은 예전과 같다.
+    @Published var preTranscribeEnabled = true
+    private var segmentTexts: [Int: String] = [:]
+    private var segmentCount = 0
+    private var segmentInFlight = 0
+    private var segmentFailed = false
+    private var lastCutElapsed: Double = 0
+    private var quietSince: Double?
+    private var awaitingSegments: ((String?) -> Void)?
     private let outputMute = OutputMute()
     @Published var polishPlan = PolishPlan.load()
     @Published var polishKeyDraft = ""
@@ -108,6 +117,9 @@ final class AppState: ObservableObject {
         muteBackgroundAudio = UserDefaults.standard.bool(forKey: "malgyeol.muteBackgroundAudio")
         if UserDefaults.standard.object(forKey: "malgyeol.polishContext") != nil {
             polishUsesContext = UserDefaults.standard.bool(forKey: "malgyeol.polishContext")
+        }
+        if UserDefaults.standard.object(forKey: "malgyeol.preTranscribe") != nil {
+            preTranscribeEnabled = UserDefaults.standard.bool(forKey: "malgyeol.preTranscribe")
         }
         polishPlan = PolishPlan.load()
         polishPlan.save()
@@ -315,12 +327,14 @@ final class AppState: ObservableObject {
     private func actuallyRecord(job: UInt64) {
         guard jobs.isCurrent(job) else { return }
         var nextPrepare: Double = 60
+        resetSegments()
         do {
             try recorder.start(deviceId: selectedDeviceId) { [weak self] level, elapsed in
                 Task { @MainActor in
                     guard let self, self.jobs.isCurrent(job), self.phase == .recording else { return }
                     self.level = level
                     self.elapsed = elapsed
+                    self.trackSegments(level: level, elapsed: elapsed, job: job)
                     self.statusLine = String(format: "듣는 중 %.0f초 / %.0f초", elapsed, MalgyeolInfo.maxSeconds)
                     if elapsed >= nextPrepare {
                         nextPrepare = elapsed + 60
@@ -370,6 +384,8 @@ final class AppState: ObservableObject {
         let job = jobs.value
         let url: URL
         outputMute.restore()
+        // 미리 받아적는 중이면 마지막 구간을 따로 닫는다(stop 전에). 본 파일은 폴백용으로 그대로 받는다.
+        let lastSegment = (preTranscribeEnabled && segmentCount > 0 && !segmentFailed) ? recorder.finishSegment() : nil
         do {
             url = try recorder.stop()
         } catch {
@@ -379,29 +395,34 @@ final class AppState: ObservableObject {
         }
         pendingWav = url
         level = 0
-        func runSTT() {
-            guard jobs.isCurrent(job) else {
-                try? FileManager.default.removeItem(at: url)
+        func acceptTranscript(_ text: String) {
+            try? FileManager.default.removeItem(at: url)
+            if pendingWav == url { pendingWav = nil }
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                finishWithoutSpeech()
                 return
             }
+            rawTranscript = text
+            malgyeolLog("transcript chars=\(text.count) job=\(job)")
+            finishAfterTranscript(text, job: job)
+        }
+        func transcribeFull() {
             phase = .transcribing
             statusLine = "받아적는 중"
             transcriber.transcribe(wav: url) { [weak self] result in
                 Task { @MainActor in
-                    try? FileManager.default.removeItem(at: url)
                     guard let self else { return }
-                    if self.pendingWav == url { self.pendingWav = nil }
-                    guard self.jobs.isCurrent(job) else { return }
+                    guard self.jobs.isCurrent(job) else {
+                        try? FileManager.default.removeItem(at: url)
+                        if self.pendingWav == url { self.pendingWav = nil }
+                        return
+                    }
                     switch result {
                     case .success(let text):
-                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            self.finishWithoutSpeech()
-                            return
-                        }
-                        self.rawTranscript = text
-                        malgyeolLog("transcript chars=\(text.count) job=\(job)")
-                        self.finishAfterTranscript(text, job: job)
+                        acceptTranscript(text)
                     case .failure(let err):
+                        try? FileManager.default.removeItem(at: url)
+                        if self.pendingWav == url { self.pendingWav = nil }
                         self.phase = .error
                         self.lastError = err.message
                         self.statusLine = "받아적기 실패"
@@ -409,6 +430,32 @@ final class AppState: ObservableObject {
                     }
                 }
             }
+        }
+        func runSTT() {
+            guard jobs.isCurrent(job) else {
+                try? FileManager.default.removeItem(at: url)
+                if let lastSegment { try? FileManager.default.removeItem(at: lastSegment) }
+                return
+            }
+            if let lastSegment, !segmentFailed, segmentCount > 0 {
+                // 앞 구간들은 이미 받아적는 중이다. 마지막 구간만 더 돌리고 순서대로 잇는다.
+                phase = .transcribing
+                statusLine = "받아적는 중 (미리 받아적은 \(segmentCount)구간 + 마지막)"
+                awaitingSegments = { [weak self] joined in
+                    guard let self, self.jobs.isCurrent(job) else { return }
+                    if let joined {
+                        malgyeolLog("segments joined count=\(self.segmentCount) chars=\(joined.count) job=\(job)")
+                        acceptTranscript(joined)
+                    } else {
+                        malgyeolLog("segments incomplete → full transcription job=\(job)")
+                        transcribeFull()
+                    }
+                }
+                startSegmentTranscription(url: lastSegment, job: job)
+                return
+            }
+            if let lastSegment { try? FileManager.default.removeItem(at: lastSegment) }
+            transcribeFull()
         }
         if !models.sizeLooksReady() {
             phase = .downloading
@@ -441,6 +488,58 @@ final class AppState: ObservableObject {
     func setPolishEnabled(_ on: Bool) {
         polishEnabled = on
         UserDefaults.standard.set(on, forKey: "malgyeol.polish")
+    }
+
+    func setPreTranscribeEnabled(_ on: Bool) {
+        preTranscribeEnabled = on
+        UserDefaults.standard.set(on, forKey: "malgyeol.preTranscribe")
+    }
+
+    /// 레벨 틱마다 부른다. 30초가 넘고 말 사이가 조용하면(또는 60초가 되면) 구간을 잘라 미리 받아적는다.
+    private func trackSegments(level: Double, elapsed: Double, job: UInt64) {
+        guard preTranscribeEnabled, !segmentFailed else { return }
+        quietSince = SegmentPlanner.nextQuietSince(current: quietSince, level: level, elapsed: elapsed)
+        guard SegmentPlanner.shouldCut(elapsed: elapsed, lastCut: lastCutElapsed, quietSince: quietSince) else { return }
+        guard let url = recorder.cutSegment() else { return }
+        lastCutElapsed = elapsed
+        quietSince = nil
+        startSegmentTranscription(url: url, job: job)
+    }
+
+    private func startSegmentTranscription(url: URL, job: UInt64) {
+        let index = segmentCount
+        segmentCount += 1
+        segmentInFlight += 1
+        malgyeolLog("segment \(index) start job=\(job)")
+        transcriber.transcribe(wav: url) { [weak self] result in
+            Task { @MainActor in
+                try? FileManager.default.removeItem(at: url)
+                guard let self, self.jobs.isCurrent(job) else { return }
+                self.segmentInFlight -= 1
+                switch result {
+                case .success(let text):
+                    self.segmentTexts[index] = text
+                    malgyeolLog("segment \(index) done chars=\(text.count)")
+                case .failure(let err):
+                    self.segmentFailed = true
+                    malgyeolLog("segment \(index) fail \(err.message)")
+                }
+                if self.segmentInFlight == 0, let waiting = self.awaitingSegments {
+                    self.awaitingSegments = nil
+                    waiting(self.segmentFailed ? nil : SegmentPlanner.join(self.segmentTexts, count: self.segmentCount))
+                }
+            }
+        }
+    }
+
+    private func resetSegments() {
+        segmentTexts = [:]
+        segmentCount = 0
+        segmentInFlight = 0
+        segmentFailed = false
+        lastCutElapsed = 0
+        quietSince = nil
+        awaitingSegments = nil
     }
 
     func setPolishUsesContext(_ on: Bool) {

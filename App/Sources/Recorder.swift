@@ -21,6 +21,10 @@ final class Recorder: @unchecked Sendable {
     /// 지금 엔진 입력 유닛에 묶인 CoreAudio 장치. 0 = 맥 기본 입력 그대로.
     private var boundDeviceID: AudioDeviceID = 0
     private var file: AVAudioFile?
+    /// 말하는 동안 미리 받아적기용 구간 파일. 본 파일과 같은 포맷으로 같이 쓴다.
+    private var segmentFile: AVAudioFile?
+    private var segmentURL: URL?
+    private var segmentSettings: [String: Any] = [:]
     private var converter: AVAudioConverter?
     private var wavURL: URL?
     private var startedAt: Date?
@@ -131,6 +135,11 @@ final class Recorder: @unchecked Sendable {
         converter = conv
         wavURL = tmp
         startedAt = Date()
+        segmentSettings = settings
+        if let seg = Self.openSegment(settings) {
+            segmentFile = seg.file
+            segmentURL = seg.url
+        }
         lock.unlock()
 
         input.installTap(onBus: 0, bufferSize: 1024, format: inFormat) { [weak self] buffer, _ in
@@ -177,6 +186,9 @@ final class Recorder: @unchecked Sendable {
         } catch {
             malgyeolLog("write \(error)")
         }
+        if let segmentFile {
+            do { try segmentFile.write(from: out) } catch { malgyeolLog("segment write \(error)") }
+        }
         let rms = rmsLevel(buffer)
         let elapsed = Date().timeIntervalSince(startedAt)
         DispatchQueue.main.async { onTick(rms, elapsed) }
@@ -202,7 +214,12 @@ final class Recorder: @unchecked Sendable {
         file = nil
         converter = nil
         startedAt = nil
+        let leftoverSegment = segmentURL
+        segmentFile = nil
+        segmentURL = nil
         lock.unlock()
+        // finishSegment() 로 가져가지 않은 구간 파일은 버린다(본 파일에 같은 소리가 있다).
+        if let leftoverSegment { try? FileManager.default.removeItem(at: leftoverSegment) }
         guard let url else { throw RecorderError.engine("녹음 파일이 없습니다") }
         return url
     }
@@ -215,8 +232,43 @@ final class Recorder: @unchecked Sendable {
         file = nil
         converter = nil
         startedAt = nil
+        let seg = segmentURL
+        segmentFile = nil
+        segmentURL = nil
         lock.unlock()
         if let url { try? FileManager.default.removeItem(at: url) }
+        if let seg { try? FileManager.default.removeItem(at: seg) }
+    }
+
+    /// 지금까지의 구간 파일을 닫아 돌려주고 새 구간을 연다. 녹음 중이 아니면 nil.
+    func cutSegment() -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard startedAt != nil, let url = segmentURL else { return nil }
+        segmentFile = nil
+        segmentURL = nil
+        if let next = Self.openSegment(segmentSettings) {
+            segmentFile = next.file
+            segmentURL = next.url
+        }
+        return url
+    }
+
+    /// 마지막 구간 파일을 닫아 돌려준다. stop() 전에 부른다.
+    func finishSegment() -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        let url = segmentURL
+        segmentFile = nil
+        segmentURL = nil
+        return url
+    }
+
+    private static func openSegment(_ settings: [String: Any]) -> (file: AVAudioFile, url: URL)? {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("malgyeol-seg-\(UUID().uuidString).wav")
+        guard let file = try? AVAudioFile(forWriting: url, settings: settings) else { return nil }
+        return (file, url)
     }
 
     /// Stop I/O and remove the tap without holding `lock` (tap callback uses `lock`).
