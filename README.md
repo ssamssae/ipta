@@ -6,7 +6,7 @@ Mac과 Windows에서 한국어를 받아 적는 앱입니다. 받아 적기는 �
 
 **Windows 10/11 x64:** `Ipta-VERSION-windows.exe`를 받아 실행합니다. 별도 Python 설치 없이 사용합니다. 처음에는 받아 적기 모델을 내려받습니다. 자세한 사용법은 [Windows 안내](windows/README.md)를 보세요.
 
-**받기:** [최신 릴리스](https://github.com/ssamssae/ipta/releases/latest)에서 `Ipta-0.1.28-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
+**받기:** [최신 릴리스](https://github.com/ssamssae/ipta/releases/latest)에서 `Ipta-0.1.31-macos.dmg`를 받습니다. 인텔맥과 애플실리콘 둘 다 이 파일 하나입니다. 디스크를 열고 입타를 응용 프로그램 폴더로 끌어다 넣으면 됩니다.
 
 **Mac 서명:** Minus Beta Studio 개발자 서명과 애플 공증을 거친 DMG를 배포합니다. Windows EXE는 코드 서명되지 않았습니다.
 
@@ -62,7 +62,7 @@ Windows 배포는 [Releases](https://github.com/ssamssae/ipta/releases)에서 Wi
 ### Windows 첫 실행·차단 안내
 
 Windows 10/11 x64용 EXE는 코드 서명이 없습니다. SmartScreen 경고가 표시될 수 있으므로 [Windows 실행 안내](windows/README.md#실행-차단-안내-smartscreen--미서명)를 먼저 확인하세요. 첫 사용에는 인터넷으로 모델 약 465 MiB(약 488 MB)를 받으며, 진행률·실패 재시도를 지원합니다. 준비 후 받아 적기는 오프라인으로 사용할 수 있습니다.
-## 0.1.29 마이크 자동 선택
+## 0.1.31 마이크 자동 선택과 타입리스 비교 후속
 
 「맥 기본 마이크 따르기」인데 맥 기본 입력이 실시간 말하기·BlackHole 같은 가상 장치면, 입타가 실제 마이크(내장 > USB > 블루투스)로 녹음하고 설정 화면에 그 사유를 한 줄 보여 줍니다. 노트북 덮개가 닫혀 있으면 내장 마이크는 건너뜁니다. 마이크를 직접 고르면 그 장치를 그대로 쓰되, 이제 맥 전체 기본 입력은 바꾸지 않고 입타 녹음에만 묶습니다. 장치 목록에 내장·USB·블루투스·가상 같은 종류가 같이 보이고, 맥 기본 입력이 바뀌면 목록이 바로 갱신됩니다. 내 맥에서 어떤 마이크가 골라지는지 보려면 터미널에서 `/Applications/입타.app/Contents/MacOS/Ipta --mic-probe` 를 실행하세요. 장치 목록·선택 사유·2초 녹음 결과를 찍습니다. 설정의 「녹음하는 동안 맥 소리 끄기」를 켜면 녹음 중에는 맥 출력(음악·알림)을 음소거하고 끝나면 원래대로 되돌립니다. 원래 음소거였으면 건드리지 않습니다.
 
