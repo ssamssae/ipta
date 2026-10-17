@@ -36,6 +36,8 @@ def run(argv: list[str], timeout: float, *, environment=None, cwd=None, cleanup:
                 if (obj.get('subtype') == 'success' and obj.get('is_error') is False
                         and obj.get('stop_reason') == 'end_turn' and isinstance(text, str) and text.strip()):
                     publish(text.strip()); return
+                if obj.get('subtype') == 'error_max_turns' or obj.get('stop_reason') == 'max_turn_requests':
+                    publish(CliFailure('turn_limit')); return
                 publish(CliFailure('invalid_output')); return
             publish(CliFailure('invalid_output'))
         except (OSError, ValueError): publish(CliFailure('execution'))
