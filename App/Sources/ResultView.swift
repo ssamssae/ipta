@@ -212,6 +212,10 @@ struct SettingsView: View {
                     get: { state.muteBackgroundAudio },
                     set: { state.setMuteBackgroundAudio($0) }
                 ))
+                Toggle("30초 넘는 녹음은 말하는 동안 미리 받아적기", isOn: Binding(
+                    get: { state.preTranscribeEnabled },
+                    set: { state.setPreTranscribeEnabled($0) }
+                ))
                 HStack {
                     Text("상태: \(state.micStatus)")
                         .font(.caption)

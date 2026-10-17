@@ -274,6 +274,14 @@ enum SelfTest {
             "synthetic chosen virtual mic is respected",
             MicPolicy.pick(selected: "LiveSpeech", devices: [liveSpeech, builtInMic], lidClosed: false).reason == .chosen
         )
+        check(
+            "synthetic segment planner leaves short recordings alone",
+            !SegmentPlanner.shouldCut(elapsed: 25, lastCut: 0, quietSince: 24) && SegmentPlanner.shouldCut(elapsed: 35, lastCut: 0, quietSince: 34.5)
+        )
+        check(
+            "synthetic segment join keeps order and falls back when one is missing",
+            SegmentPlanner.join([0: "하나", 1: "둘"], count: 2) == "하나 둘" && SegmentPlanner.join([1: "둘"], count: 2) == nil
+        )
         let learned = CorrectionLearning.pairs(inserted: "오늘 아태나에서 회의 했어요", edited: "오늘 아테나에서 회의 했어요")
         check(
             "synthetic correction pairs find the changed word only",
