@@ -449,7 +449,9 @@ class AppState:
                 return cleaned or raw, "다듬기에서 내용이 줄거나 바뀌어 받아 적은 글을 유지했습니다", False
             return modeled, f"말한 글을 {polish.title(plan.provider)}로 다듬었습니다", True
         fallback = cleaned or raw
-        if failure == "timeout":
+        if failure == "content_changed":
+            note = "다듬기에서 내용이 줄거나 바뀌어 받아 적은 글을 유지했습니다"
+        elif failure == "timeout":
             note = "AI 응답이 늦어 기본 다듬기만 했습니다. 로그인 문제는 확인되지 않았습니다"
         elif failure in ("auth", "auth_unavailable"):
             note = f"{polish.title(plan.provider)} AI 연결을 확인하지 못해 기본 다듬기만 했습니다. 설정에서 AI 로그인을 확인하세요"
@@ -467,7 +469,12 @@ class AppState:
         if plan.provider == "cursor" or plan.uses_oauth:
             key = keys.get_key(plan.provider) if plan.needs_pasted_key else ""
             text = oauth.polish_via_cli(plan.provider, instructions, user, key=key)
-            return (text.strip() if editing and text and len(text)<=20000 else None) if editing else (speech.sanitize(text, user) if text else None)
+            if editing:
+                return text.strip() if text and len(text) <= 20000 else None
+            sanitized = speech.sanitize(text, user) if text else None
+            if text and sanitized is None:
+                raise oauth.CliFailure("content_changed")
+            return sanitized
         key = keys.get_key(plan.provider) if polish.needs_key(plan.provider) else ""
         req = polish.make_request(plan.provider, key, plan.model, instructions, user)
         if req is None:
