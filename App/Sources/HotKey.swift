@@ -2,7 +2,8 @@ import AppKit
 import Carbon
 import Foundation
 
-enum HotKeyAction { case toggle, cancel }
+/// toggle = 시작/정지 키 눌림, toggleReleased = 같은 키 뗌(누르고 있는 동안만 녹음 판별용), cancel = 취소 키 눌림.
+enum HotKeyAction { case toggle, toggleReleased, cancel }
 
 struct HotKeySpec: Equatable {
     var keyCode: UInt32
@@ -105,7 +106,11 @@ final class HotKeyCenter {
     init(toggle: HotKeySpec, cancel: HotKeySpec, callback: @escaping (HotKeyAction) -> Void) {
         self.callback = callback
         HotKeyCenter.instance = self
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        // 눌림과 뗌을 모두 받는다. 뗌은 시작/정지 키에만 쓴다(누르고 있는 동안만 녹음).
+        var specs = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
         InstallEventHandler(GetApplicationEventTarget(), { (_, event, _) -> OSStatus in
             var hk = EventHotKeyID()
             GetEventParameter(
@@ -117,10 +122,11 @@ final class HotKeyCenter {
                 nil,
                 &hk
             )
-            if hk.id == 1 { HotKeyCenter.instance?.callback(.toggle) }
-            if hk.id == 2 { HotKeyCenter.instance?.callback(.cancel) }
+            let released = GetEventKind(event) == UInt32(kEventHotKeyReleased)
+            if hk.id == 1 { HotKeyCenter.instance?.callback(released ? .toggleReleased : .toggle) }
+            if hk.id == 2, !released { HotKeyCenter.instance?.callback(.cancel) }
             return noErr
-        }, 1, &spec, nil, &handler)
+        }, 2, &specs, nil, &handler)
         rebind(toggle: toggle, cancel: cancel)
     }
 
