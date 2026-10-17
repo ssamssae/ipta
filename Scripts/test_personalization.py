@@ -108,7 +108,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="ipta-personalization-") as tmp:
         folder = Path(tmp)
         (folder / "Tests.swift").write_text(HARNESS)
-        names = ["Personalization", "Polisher", "PolishPlan", "OAuthCLI"]
+        names = ["Personalization", "CorrectionLearning", "Polisher", "PolishPlan", "OAuthCLI"]
         subprocess.run(["swiftc", "-swift-version", "5", *[str(ROOT / f"App/Sources/{n}.swift") for n in names], str(folder / "Tests.swift"), "-framework", "AppKit", "-framework", "Security", "-Xlinker", "-weak_framework", "-Xlinker", "FoundationModels", "-o", str(folder / "tests")], check=True)
         subprocess.run([str(folder / "tests"), str(folder)], check=True, timeout=30)
 

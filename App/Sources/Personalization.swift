@@ -49,6 +49,41 @@ struct Personalization: Codable {
     var tones: [AppToneRule] = []
     var historyEnabled = false
     var history: [DictationRecord] = []
+    /// 넣은 글을 10초 뒤 한 번 읽어 고친 단어를 후보로 모은다(기본 꺼짐).
+    var correctionLearningEnabled = false
+    var corrections: [CorrectionCandidate] = []
+
+    enum CodingKeys: String, CodingKey {
+        case vocabulary, tones, historyEnabled, history, correctionLearningEnabled, corrections
+    }
+
+    init() {}
+
+    /// 옛 파일(키 일부 없음)도 그대로 읽는다. 없는 키는 기본값.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        vocabulary = try c.decodeIfPresent([VocabularyEntry].self, forKey: .vocabulary) ?? []
+        tones = try c.decodeIfPresent([AppToneRule].self, forKey: .tones) ?? []
+        historyEnabled = try c.decodeIfPresent(Bool.self, forKey: .historyEnabled) ?? false
+        history = try c.decodeIfPresent([DictationRecord].self, forKey: .history) ?? []
+        correctionLearningEnabled = try c.decodeIfPresent(Bool.self, forKey: .correctionLearningEnabled) ?? false
+        corrections = try c.decodeIfPresent([CorrectionCandidate].self, forKey: .corrections) ?? []
+    }
+
+    /// 고친 단어쌍을 후보에 더한다. 같은 쌍은 횟수만 올리고, 횟수·최근순으로 50개까지 남긴다.
+    mutating func rememberCorrections(_ pairs: [(heard: String, spelling: String)], appName: String) {
+        guard correctionLearningEnabled else { return }
+        for pair in pairs {
+            if let idx = corrections.firstIndex(where: { $0.heard == pair.heard && $0.spelling == pair.spelling }) {
+                corrections[idx].count += 1
+                corrections[idx].date = Date()
+            } else {
+                corrections.insert(CorrectionCandidate(heard: pair.heard, spelling: pair.spelling, appName: appName), at: 0)
+            }
+        }
+        corrections.sort { ($0.count, $0.date) > ($1.count, $1.date) }
+        corrections = Array(corrections.prefix(CorrectionLearning.maxCandidates))
+    }
 
     func tone(for bundleID: String) -> WritingTone {
         tones.first(where: { $0.bundleID == bundleID })?.tone ?? .original
@@ -124,7 +159,8 @@ struct PersonalizationStore {
         let data = try Data(contentsOf: file)
         guard data.count <= 16_000_000 else { throw PersonalizationError.invalidFile }
         let value = try JSONDecoder().decode(Personalization.self, from: data)
-        guard value.vocabulary.count <= 200, value.tones.count <= 200, value.history.count <= 50 else {
+        guard value.vocabulary.count <= 200, value.tones.count <= 200, value.history.count <= 50,
+              value.corrections.count <= CorrectionLearning.maxCandidates else {
             throw PersonalizationError.invalidFile
         }
         return value

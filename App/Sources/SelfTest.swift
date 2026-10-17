@@ -274,6 +274,24 @@ enum SelfTest {
             "synthetic chosen virtual mic is respected",
             MicPolicy.pick(selected: "LiveSpeech", devices: [liveSpeech, builtInMic], lidClosed: false).reason == .chosen
         )
+        let learned = CorrectionLearning.pairs(inserted: "오늘 아태나에서 회의 했어요", edited: "오늘 아테나에서 회의 했어요")
+        check(
+            "synthetic correction pairs find the changed word only",
+            learned.count == 1 && learned[0].heard == "아태나에서" && learned[0].spelling == "아테나에서"
+        )
+        check(
+            "synthetic correction pairs ignore a rewritten field",
+            CorrectionLearning.pairs(inserted: "오늘 회의 했어요", edited: "전혀 다른 내용의 글").isEmpty
+        )
+        check(
+            "synthetic edited region follows the context tail",
+            CorrectionLearning.editedRegion(in: "앞 글입니다. 오늘 아테나에서 회의", contextTail: "앞 글입니다. ", insertedCount: 12)?.text == "오늘 아테나에서 회의"
+        )
+        check(
+            "synthetic personalization file without correction keys still loads",
+            (try? JSONDecoder().decode(Personalization.self, from: Data(#"{"vocabulary":[],"tones":[],"historyEnabled":false,"history":[]}"#.utf8))) != nil
+                && (try? JSONDecoder().decode(Personalization.self, from: Data(#"{"vocabulary":[]}"#.utf8))) != nil
+        )
         check(
             "synthetic v key lookup follows the layout table",
             Paster.keyCode(producing: "v", in: [(9, "v"), (47, ".")]) == 9
