@@ -132,6 +132,13 @@ struct ResultView: View {
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 AppKitActionButton(
+                    title: "다시 넣기",
+                    identifier: "malgyeol-paste-again",
+                    enabled: !state.transcript.isEmpty,
+                    action: { state.pasteTranscriptAgain() }
+                )
+                .frame(width: 88, height: 28)
+                AppKitActionButton(
                     title: "복사",
                     identifier: "malgyeol-copy",
                     enabled: !state.transcript.isEmpty,

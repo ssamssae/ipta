@@ -73,6 +73,45 @@ final class Paster {
 
     static let keptNote = "결과를 보관했습니다. 복사를 누르세요."
 
+    // MARK: - ⌘V 키 위치(자판별)
+
+    private nonisolated(unsafe) static var cachedVKey: (layoutID: String, code: CGKeyCode)?
+
+    /// 현재 자판에서 「v」를 내는 키 코드. 드보락·AZERTY 같은 자판에서도 ⌘V 가 맞게 간다. 못 찾으면 ANSI V(9).
+    static func keyCodeForV() -> CGKeyCode {
+        let fallback = CGKeyCode(kVK_ANSI_V)
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return fallback }
+        let layoutID = TISGetInputSourceProperty(source, kTISPropertyInputSourceID)
+            .map { Unmanaged<CFString>.fromOpaque($0).takeUnretainedValue() as String } ?? ""
+        if let cached = cachedVKey, cached.layoutID == layoutID { return cached.code }
+        guard let dataPtr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return fallback }
+        let data = Unmanaged<CFData>.fromOpaque(dataPtr).takeUnretainedValue() as Data
+        let table: [(CGKeyCode, String)] = data.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else { return [] }
+            return (0..<128).compactMap { code -> (CGKeyCode, String)? in
+                var dead: UInt32 = 0
+                var chars = [UniChar](repeating: 0, count: 4)
+                var length = 0
+                let status = UCKeyTranslate(
+                    base, UInt16(code), UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()),
+                    OptionBits(kUCKeyTranslateNoDeadKeysMask), &dead, chars.count, &length, &chars
+                )
+                guard status == noErr, length > 0 else { return nil }
+                return (CGKeyCode(code), String(utf16CodeUnits: chars, count: length))
+            }
+        }
+        let code = keyCode(producing: "v", in: table) ?? fallback
+        cachedVKey = (layoutID, code)
+        if code != fallback { malgyeolLog("paste key: layout=\(layoutID) v=\(code)") }
+        return code
+    }
+
+    /// 표에서 그 글자를 내는 첫 키 코드(순수, 검사용). 대소문자 무시.
+    nonisolated static func keyCode(producing char: Character, in table: [(CGKeyCode, String)]) -> CGKeyCode? {
+        let want = String(char).lowercased()
+        return table.first { $0.1.lowercased() == want }?.0
+    }
+
     /// Auto-paste into the input captured at record start.
     /// Classic path: same AX text field. Fallback: same front app (Ghostty/Cursor prompt).
     /// Every refusal path leaves the clipboard untouched; the transcript stays in the window.
@@ -157,7 +196,7 @@ final class Paster {
         restoreGeneration += 1
         let gen = restoreGeneration
         let src = CGEventSource(stateID: .hidSystemState)
-        let v: CGKeyCode = 0x09
+        let v = Paster.keyCodeForV()
         guard
             let down = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: true),
             let up = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: false)

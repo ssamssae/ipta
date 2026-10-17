@@ -275,6 +275,14 @@ enum SelfTest {
             MicPolicy.pick(selected: "LiveSpeech", devices: [liveSpeech, builtInMic], lidClosed: false).reason == .chosen
         )
         check(
+            "synthetic v key lookup follows the layout table",
+            Paster.keyCode(producing: "v", in: [(9, "v"), (47, ".")]) == 9
+                && Paster.keyCode(producing: "v", in: [(9, "k"), (47, "V")]) == 47
+                && Paster.keyCode(producing: "v", in: [(9, "k")]) == nil
+        )
+        let vKey = Paster.keyCodeForV()
+        check("real current layout maps v to a key (code=\(vKey))", vKey < 128)
+        check(
             "synthetic context is refused for secure fields and password managers",
             !TargetLock.contextAllowed(bundleId: "com.apple.Notes", secure: true, role: "AXTextArea", subrole: "")
                 && !TargetLock.contextAllowed(bundleId: "com.1password.1password", secure: false, role: "AXTextArea", subrole: "")
@@ -316,6 +324,10 @@ enum SelfTest {
         )
         let mainMenu = MainActor.assumeIsolated { AppDelegate.makeMainMenu(target: nil) }
         let menuItems = mainMenu.items.compactMap(\.submenu).flatMap(\.items)
+        check(
+            "synthetic main menu has paste-again",
+            menuItems.contains { $0.action == #selector(AppDelegate.pasteTranscriptAgain) && $0.keyEquivalent == "v" }
+        )
         check(
             "synthetic main menu has settings",
             menuItems.contains { $0.keyEquivalent == "," && $0.action == #selector(AppDelegate.openSettings) }
