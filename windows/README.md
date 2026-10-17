@@ -13,6 +13,16 @@ WSL에 해당 CLI가 있으면 그곳의 로그인 계정을 우선 사용합니
 
 Windows EXE는 코드 서명되지 않았습니다. GitHub 배포 파일의 SHA-256을 확인할 수 있습니다. Mac 전용 기본 다듬기는 Windows에 없습니다.
 
+## 업데이트 받기
+
+앱에는 자동 업데이트 기능이 없습니다. [GitHub Releases](https://github.com/ssamssae/ipta/releases)에서 새 Windows EXE와 같은 버전의 SHA-256 파일을 받으세요. 파일을 확인한 뒤 입타를 종료하고 기존 EXE를 새 EXE로 교체합니다. 설정과 받아 적기 모델은 `%APPDATA%\\Ipta`에 남습니다.
+
+Gumroad 시작 패키지 구매자는 구매 영수증의 **View content** 또는 [Gumroad 라이브러리](https://gumroad.com/library)에서 같은 상품에 게시된 업데이트 파일을 추가 결제 없이 받을 수 있습니다. 구매할 때 사용한 이메일로 접근하세요. 패키지의 변경 내역에서 Mac과 Windows 버전을 각각 확인하세요.
+
+### Windows 0.1.29
+
+녹음에 음성 구간이 없으면 받아쓰기와 붙여넣기를 건너뜁니다. 실제로 말한 “감사합니다”나 “네”는 문구만으로 삭제하지 않습니다. 음성 판별 파일은 EXE에 포함되므로 별도 다운로드가 필요하지 않습니다.
+
 ## 실행 차단 안내 (SmartScreen / 미서명)
 
 Windows 10/11 **x64**용이며 코드 서명이 없습니다. 실행 전에는 [별도 시작 안내](Windows-start-guide.html)를 읽을 수 있습니다. 빌드 산출물에도 `Windows-start-guide.html`이 EXE와 함께 들어갑니다. 앱이 이미 차단된 상태에서는 앱 안의 안내 창을 띄울 수 없습니다.
