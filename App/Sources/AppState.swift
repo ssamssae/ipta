@@ -222,16 +222,37 @@ final class AppState: ObservableObject {
         settingsNotice = "마이크 버튼 연결을 지웠습니다"
     }
 
+    /// 시작/정지 키를 이 시간 넘게 누르고 있다가 떼면 떼는 순간 녹음을 끝낸다(누르고 있는 동안만 녹음).
+    /// 짧게 치면 예전처럼 토글이다.
+    static let holdToTalkThreshold: TimeInterval = 0.5
+    private var hotkeyPressedAt: Date?
+
+    nonisolated static func holdStopsRecording(pressDuration: TimeInterval, recording: Bool) -> Bool {
+        recording && pressDuration >= holdToTalkThreshold
+    }
+
     func toggle(fromHotkey: Bool) {
         switch phase {
         case .recording:
+            hotkeyPressedAt = nil
             stopAndTranscribe()
         case .downloading, .transcribing, .polishing, .requestingMic:
             // The explicit cancel key/button remains available during processing.
             return
         default:
+            hotkeyPressedAt = fromHotkey ? Date() : nil
             start(fromHotkey: fromHotkey)
         }
+    }
+
+    /// 시작/정지 키를 뗐을 때. 녹음을 시작한 그 눌림이 길었으면 여기서 멈춘다.
+    func hotkeyReleased() {
+        guard let pressedAt = hotkeyPressedAt else { return }
+        hotkeyPressedAt = nil
+        let held = Date().timeIntervalSince(pressedAt)
+        guard Self.holdStopsRecording(pressDuration: held, recording: phase == .recording) else { return }
+        malgyeolLog("hotkey held \(String(format: "%.2f", held))s → stop on release")
+        stopAndTranscribe()
     }
 
     func start(fromHotkey: Bool) {

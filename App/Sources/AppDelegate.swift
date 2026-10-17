@@ -58,6 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case .toggle:
                 self.hidePanel()
                 self.state.toggle(fromHotkey: true)
+            case .toggleReleased:
+                self.state.hotkeyReleased()
             case .cancel:
                 self.state.cancel()
             }
@@ -113,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 switch which {
                 case .toggle: toggle = spec
                 case .cancel: cancel = spec
+                case .toggleReleased: return nil  // 캡처 대상은 눌림뿐
                 }
                 if toggle.keyCode == cancel.keyCode && toggle.modifiers == cancel.modifiers {
                     self.state.settingsNotice = "시작과 취소에 같은 키를 쓸 수 없습니다"

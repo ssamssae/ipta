@@ -275,6 +275,18 @@ enum SelfTest {
             MicPolicy.pick(selected: "LiveSpeech", devices: [liveSpeech, builtInMic], lidClosed: false).reason == .chosen
         )
         check(
+            "synthetic short hotkey tap keeps recording (toggle)",
+            !AppState.holdStopsRecording(pressDuration: 0.2, recording: true)
+        )
+        check(
+            "synthetic long hotkey hold stops on release",
+            AppState.holdStopsRecording(pressDuration: 0.6, recording: true)
+        )
+        check(
+            "synthetic hotkey release outside recording does nothing",
+            !AppState.holdStopsRecording(pressDuration: 2, recording: false)
+        )
+        check(
             "synthetic output mute leaves an already muted Mac alone",
             !OutputMute.shouldMute(wasMuted: true) && OutputMute.shouldMute(wasMuted: false)
         )
