@@ -114,7 +114,8 @@ final class Polisher: @unchecked Sendable {
         lock.unlock()
     }
 
-    func polish(raw: String, selected: String, plan: PolishPlan, personalization: Personalization = Personalization(), bundleID: String = "", completion: @escaping (PolishResult) -> Void) {
+    /// contextBefore = 입력칸에서 커서 앞에 이미 적힌 글(참고용). 비면 예전과 같다.
+    func polish(raw: String, selected: String, plan: PolishPlan, personalization: Personalization = Personalization(), bundleID: String = "", contextBefore: String = "", completion: @escaping (PolishResult) -> Void) {
         lock.lock()
         generation += 1
         let job = generation
@@ -149,12 +150,23 @@ final class Polisher: @unchecked Sendable {
                 return
             }
 
+            let spoken = cleaned.isEmpty ? corrected : cleaned
+            let context = Self.contextBlock(contextBefore)
+            let instructions = Self.polishInstructions
+                + (context.isEmpty ? "" : "\n" + Self.contextInstructions)
+                + "\n" + personalization.instructions(for: bundleID, text: corrected)
+            let user = context.isEmpty ? spoken : "\(context)\n\n받아 적은 말:\n\(spoken)"
             if plan.canAttemptModel,
-               let text = self.modelTransform(job: job, plan: plan, instructions: Self.polishInstructions + "\n" + personalization.instructions(for: bundleID, text: corrected), user: cleaned.isEmpty ? corrected : cleaned)
+               let text = self.modelTransform(job: job, plan: plan, instructions: instructions, user: user)
             {
-                let requiredWords = personalization.vocabulary.map(\.spelling).filter { (cleaned.isEmpty ? corrected : cleaned).contains($0) }
+                let requiredWords = personalization.vocabulary.map(\.spelling).filter { spoken.contains($0) }
                 guard requiredWords.allSatisfy({ text.contains($0) }) else {
-                    completion(PolishResult(text: cleaned.isEmpty ? corrected : cleaned, note: "등록한 단어가 바뀌어 기본 다듬기 결과를 보관했습니다", usedModel: false))
+                    completion(PolishResult(text: spoken, note: "등록한 단어가 바뀌어 기본 다듬기 결과를 보관했습니다", usedModel: false))
+                    return
+                }
+                guard !Self.leaksContext(result: text, context: contextBefore, spoken: spoken) else {
+                    malgyeolLog("polish context leak → basic cleanup (result chars=\(text.count))")
+                    completion(PolishResult(text: spoken, note: "앞 글이 섞여 나와 기본 다듬기 결과를 보관했습니다", usedModel: false))
                     return
                 }
                 completion(PolishResult(text: text, note: "말한 글을 \(plan.provider.title)로 다듬었습니다", usedModel: true))
@@ -182,6 +194,31 @@ final class Polisher: @unchecked Sendable {
     새 음식, 장소, 사람, 이유를 만들지 않는다. 추천하거나 질문으로 바꾸지 않는다.
     설명 없이 다듬은 문장만 출력한다.
     """
+
+    /// 앞 글이 있을 때만 붙는다. 앞 글은 참고용이고 출력에 들어가면 안 된다.
+    static let contextInstructions = """
+    「앞 글」은 같은 입력칸에 이미 적혀 있는 글이다. 고유명사 표기·말투·존댓말·용어를 앞 글에 맞춘다.
+    앞 글을 다시 쓰거나 이어 쓰거나 고치지 않는다. 출력은 받아 적은 말을 다듬은 문장뿐이다.
+    """
+
+    /// 앞 글 블록. 공백뿐이면 빈 문자열.
+    nonisolated static func contextBlock(_ contextBefore: String) -> String {
+        let trimmed = contextBefore.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "" : "앞 글(참고만, 출력 금지):\n\(trimmed)"
+    }
+
+    /// 모델이 앞 글을 받아쓰기 결과에 섞어 냈는지. 앞 글의 40자 조각이 결과에 있는데 말한 글에는 없으면 샌 것으로 본다.
+    nonisolated static func leaksContext(result: String, context: String, spoken: String, window: Int = 40) -> Bool {
+        let ctx = Array(context.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard ctx.count >= window else { return false }
+        var i = 0
+        while i + window <= ctx.count {
+            let piece = String(ctx[i..<(i + window)])
+            if result.contains(piece), !spoken.contains(piece) { return true }
+            i += window / 2
+        }
+        return false
+    }
 
     private static let editInstructions = """
     사용자가 고른 글을 지시에 맞게 다룬다. 새 사실은 만들지 않는다.

@@ -152,6 +152,60 @@ enum TargetLock {
         return axString(el, kAXSelectedTextAttribute as String)
     }
 
+    /// 앞 글을 읽지 않는 앱(비밀번호 관리자·키체인). 접두사 비교.
+    static let contextBlockedBundlePrefixes = [
+        "com.1password", "com.agilebits", "com.lastpass", "com.bitwarden", "com.dashlane",
+        "com.apple.keychainaccess", "com.apple.Passwords",
+    ]
+
+    /// 다듬기 문맥으로 앞 글을 읽어도 되는 대상인지(순수 판정, 검사용).
+    nonisolated static func contextAllowed(bundleId: String, secure: Bool, role: String, subrole: String) -> Bool {
+        if secure || role == "AXSecureTextField" || subrole == "AXSecureTextField" { return false }
+        return !contextBlockedBundlePrefixes.contains { bundleId.hasPrefix($0) }
+    }
+
+    /// 잠근 입력칸에서 커서(또는 선택 시작) 앞 글을 최대 maxChars 자 읽는다. 다듬기 문맥용.
+    /// 값 전체를 복사하지 않고 범위 문자열(kAXStringForRange)을 먼저 쓰고, 없으면 5만 자 이하일 때만 값에서 자른다.
+    static func contextBefore(_ target: LockedTarget?, maxChars: Int = 500) -> String {
+        guard let target, let el = target.element else { return "" }
+        guard contextAllowed(bundleId: target.bundleId, secure: target.secure, role: target.role, subrole: target.subrole) else { return "" }
+        guard let range = selectedRange(el), range.location > 0 else { return "" }
+        let end = range.location
+        let start = max(0, end - maxChars)
+        let want = CFRange(location: start, length: end - start)
+        if let s = stringForRange(el, want) { return s }
+        let count = axInt(el, kAXNumberOfCharactersAttribute as String) ?? 0
+        guard count <= 50_000 else { return "" }
+        let value = axString(el, kAXValueAttribute as String) as NSString
+        guard end <= value.length else { return "" }
+        return value.substring(with: NSRange(location: start, length: end - start))
+    }
+
+    static func selectedRange(_ el: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue((value as! AXValue), .cfRange, &range) else { return nil }
+        return range
+    }
+
+    static func stringForRange(_ el: AXUIElement, _ range: CFRange) -> String? {
+        var r = range
+        guard let param = AXValueCreate(.cfRange, &r) else { return nil }
+        var value: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(el, kAXStringForRangeParameterizedAttribute as CFString, param, &value) == .success else {
+            return nil
+        }
+        return value as? String
+    }
+
+    static func axInt(_ el: AXUIElement, _ attr: String) -> Int? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &value) == .success else { return nil }
+        return (value as? Int) ?? (value as? NSNumber)?.intValue
+    }
+
     /// 크롬·일렉트론 계열은 AXEnhancedUserInterface 를 켜야 입력칸을 접근성 트리에 내놓는다.
     /// 포커스 요소를 못 찾았을 때만 한 번 켜고 잠깐 기다린다. 끄지는 않는다(앱을 다시 켤 때 풀린다).
     static func enableEnhancedUserInterface(_ appEl: AXUIElement, bundleId: String) -> Bool {
