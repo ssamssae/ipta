@@ -163,6 +163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// 왼쪽 위 앱 메뉴. target 이 nil 이면 입타 전용 항목도 응답 체인으로 보낸다(자가검사용).
+    @objc func pasteTranscriptAgain() {
+        hidePanel()
+        state.pasteTranscriptAgain()
+    }
+
     static func makeMainMenu(target: AnyObject?) -> NSMenu {
         func item(_ title: String, _ action: Selector, _ key: String = "",
                   _ mods: NSEvent.ModifierFlags = .command, own: Bool = false) -> NSMenuItem {
@@ -202,6 +207,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             item("복사하기", #selector(NSText.copy(_:)), "c"),
             item("붙여넣기", #selector(NSText.paste(_:)), "v"),
             item("전체 선택", #selector(NSText.selectAll(_:)), "a"),
+            .separator(),
+            item("마지막 결과 다시 넣기", #selector(AppDelegate.pasteTranscriptAgain), "v", [.command, .shift], own: true),
         ]))
         main.addItem(submenu("윈도우", [
             item("최소화", #selector(NSWindow.performMiniaturize(_:)), "m"),

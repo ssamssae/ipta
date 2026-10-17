@@ -24,6 +24,8 @@ final class AppState: ObservableObject {
     /// 다듬을 때 입력칸의 앞 글(커서 앞 500자)을 참고로 넣는다(기본 켬). 고른 다듬기 공급자에게 받아쓰기와 함께 전달된다.
     @Published var polishUsesContext = true
     private var lockedContextBefore = ""
+    /// 마지막으로 결과를 넣으려던 칸. 「다시 넣기」가 쓴다.
+    private var lastPasteTarget: LockedTarget?
     private let outputMute = OutputMute()
     @Published var polishPlan = PolishPlan.load()
     @Published var polishKeyDraft = ""
@@ -659,10 +661,30 @@ final class AppState: ObservableObject {
             statusLine = lastPasteNote
             return
         }
+        lastPasteTarget = locked
         let note = paster.pasteLocked(transcript, expected: locked)
         lastPasteNote = note
         statusLine = note
         malgyeolLog("paste \(note)")
+    }
+
+    /// 마지막으로 넣으려던 칸에 지금 결과를 다시 넣는다(자동 넣기가 거부됐거나 글을 지웠을 때).
+    func pasteTranscriptAgain() {
+        guard !transcript.isEmpty else { return }
+        guard let target = lastPasteTarget else {
+            statusLine = "다시 넣을 대상이 없습니다. 단축키로 시작한 녹음만 대상이 남습니다. 복사를 쓰세요."
+            lastPasteNote = statusLine
+            return
+        }
+        guard Paster.isTrusted() else {
+            statusLine = "손쉬운 사용이 꺼져 있어 넣지 못했습니다. 복사를 쓰세요."
+            lastPasteNote = statusLine
+            return
+        }
+        let note = paster.pasteLocked(transcript, expected: target)
+        statusLine = note
+        lastPasteNote = note
+        malgyeolLog("paste again \(note)")
     }
 
     func finishWithoutSpeech() {
