@@ -257,6 +257,11 @@ struct SettingsView: View {
                         get: { state.polishEnabled },
                         set: { state.setPolishEnabled($0) }
                     ))
+                    Toggle("입력칸의 앞 글을 참고해 다듬기 (고유명사·말투 맞춤, 앞 500자)", isOn: Binding(
+                        get: { state.polishUsesContext },
+                        set: { state.setPolishUsesContext($0) }
+                    ))
+                    .disabled(!state.polishEnabled)
                     Picker("어디서", selection: Binding(
                         get: { state.polishPlan.tier },
                         set: { state.setPolishTier($0) }

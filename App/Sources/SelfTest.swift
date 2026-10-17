@@ -275,6 +275,22 @@ enum SelfTest {
             MicPolicy.pick(selected: "LiveSpeech", devices: [liveSpeech, builtInMic], lidClosed: false).reason == .chosen
         )
         check(
+            "synthetic context is refused for secure fields and password managers",
+            !TargetLock.contextAllowed(bundleId: "com.apple.Notes", secure: true, role: "AXTextArea", subrole: "")
+                && !TargetLock.contextAllowed(bundleId: "com.1password.1password", secure: false, role: "AXTextArea", subrole: "")
+                && TargetLock.contextAllowed(bundleId: "com.apple.Notes", secure: false, role: "AXTextArea", subrole: "")
+        )
+        check(
+            "synthetic empty context adds no block",
+            Polisher.contextBlock("  \n ").isEmpty && Polisher.contextBlock("안녕").hasPrefix("앞 글(")
+        )
+        let leakContext = String(repeating: "회의록 초안입니다. 오늘 안건은 예산과 일정 둘입니다. ", count: 3)
+        check(
+            "synthetic context leak is detected",
+            Polisher.leaksContext(result: "요약: " + leakContext, context: leakContext, spoken: "요약 부탁해")
+                && !Polisher.leaksContext(result: "예산과 일정을 정리했습니다", context: leakContext, spoken: "예산과 일정을 정리했어")
+        )
+        check(
             "synthetic short hotkey tap keeps recording (toggle)",
             !AppState.holdStopsRecording(pressDuration: 0.2, recording: true)
         )

@@ -21,6 +21,9 @@ final class AppState: ObservableObject {
     @Published var polishEnabled = true
     /// 녹음하는 동안 맥 출력을 잠시 음소거(기본 꺼짐). 원래 음소거 상태는 끝나면 되돌린다.
     @Published var muteBackgroundAudio = false
+    /// 다듬을 때 입력칸의 앞 글(커서 앞 500자)을 참고로 넣는다(기본 켬). 고른 다듬기 공급자에게 받아쓰기와 함께 전달된다.
+    @Published var polishUsesContext = true
+    private var lockedContextBefore = ""
     private let outputMute = OutputMute()
     @Published var polishPlan = PolishPlan.load()
     @Published var polishKeyDraft = ""
@@ -101,6 +104,9 @@ final class AppState: ObservableObject {
             polishEnabled = UserDefaults.standard.bool(forKey: "malgyeol.polish")
         }
         muteBackgroundAudio = UserDefaults.standard.bool(forKey: "malgyeol.muteBackgroundAudio")
+        if UserDefaults.standard.object(forKey: "malgyeol.polishContext") != nil {
+            polishUsesContext = UserDefaults.standard.bool(forKey: "malgyeol.polishContext")
+        }
         polishPlan = PolishPlan.load()
         polishPlan.save()
         polishKeyDraft = ""
@@ -262,8 +268,10 @@ final class AppState: ObservableObject {
         if fromHotkey {
             lockedTarget = TargetLock.capture()
             lockedSelectedText = TargetLock.selectedText(of: lockedTarget)
+            lockedContextBefore = polishUsesContext ? TargetLock.contextBefore(lockedTarget) : ""
             wantsAutoPaste = true
             lockedSummary = lockedTarget?.summary ?? ""
+            if !lockedContextBefore.isEmpty { lockedSummary += " ctx=\(lockedContextBefore.count)" }
             if let why = lockedTarget?.refusalReason {
                 lastPasteNote = "시작한 곳이 \(why)이라 끝나면 자동으로 넣지 않고 결과만 보관합니다."
             } else {
@@ -273,6 +281,7 @@ final class AppState: ObservableObject {
         } else {
             lockedTarget = nil
             lockedSelectedText = ""
+            lockedContextBefore = ""
             wantsAutoPaste = false
             lockedSummary = "창에서 시작 — 자동 붙여넣기 없음"
         }
@@ -430,6 +439,11 @@ final class AppState: ObservableObject {
     func setPolishEnabled(_ on: Bool) {
         polishEnabled = on
         UserDefaults.standard.set(on, forKey: "malgyeol.polish")
+    }
+
+    func setPolishUsesContext(_ on: Bool) {
+        polishUsesContext = on
+        UserDefaults.standard.set(on, forKey: "malgyeol.polishContext")
     }
 
     func setMuteBackgroundAudio(_ on: Bool) {
@@ -609,7 +623,7 @@ final class AppState: ObservableObject {
         phase = .polishing
         statusLine = "말한 글을 다듬는 중"
         let selected = lockedSelectedText
-        polisher.polish(raw: text, selected: selected, plan: polishPlan, personalization: recordingPersonalization, bundleID: recordingBundleID) { [weak self] result in
+        polisher.polish(raw: text, selected: selected, plan: polishPlan, personalization: recordingPersonalization, bundleID: recordingBundleID, contextBefore: lockedContextBefore) { [weak self] result in
             Task { @MainActor in
                 guard let self, self.jobs.isCurrent(job) else { return }
                 self.transcript = result.skipPaste ? text : result.text
