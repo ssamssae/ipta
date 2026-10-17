@@ -71,6 +71,34 @@ struct PersonalizationSettingsView: View {
                     }.frame(height: 26)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
+            SettingsSection("고친 말 배우기") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("자동으로 넣은 글을 10초 뒤 한 번 읽어 고친 단어를 후보로 저장", isOn: Binding(
+                        get: { state.personalization.correctionLearningEnabled }, set: { state.setCorrectionLearningEnabled($0) }
+                    ))
+                    Text("켜면 입타가 넣은 칸만 다시 읽습니다. 후보는 이 맥에만 남고, 「사전에 등록」을 눌러야 다음 받아쓰기에 적용됩니다. 끄면 후보도 삭제합니다.")
+                        .font(.caption).fixedSize(horizontal: false, vertical: true)
+                    if state.personalization.corrections.isEmpty {
+                        Text("아직 후보가 없습니다").font(.caption)
+                    }
+                    ForEach(state.personalization.corrections) { candidate in
+                        HStack {
+                            Text("\(candidate.heard) → \(candidate.spelling)")
+                            Text("\(candidate.count)회 · \(candidate.appName)").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            AppKitActionButton(title: "사전에 등록", identifier: "ipta-correction-add-\(candidate.id)") {
+                                state.promoteCorrection(candidate.id)
+                            }.frame(width: 92, height: 24)
+                            AppKitActionButton(title: "지우기", identifier: "ipta-correction-del-\(candidate.id)") {
+                                state.deleteCorrections(candidate.id)
+                            }.frame(width: 60, height: 24)
+                        }
+                    }
+                    AppKitActionButton(title: "후보 전체 삭제", enabled: !state.personalization.corrections.isEmpty) {
+                        state.deleteCorrections()
+                    }.frame(height: 26)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
             if !state.settingsNotice.isEmpty {
                 Text(state.settingsNotice).font(.caption).fixedSize(horizontal: false, vertical: true)
             }

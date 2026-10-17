@@ -666,6 +666,50 @@ final class AppState: ObservableObject {
         lastPasteNote = note
         statusLine = note
         malgyeolLog("paste \(note)")
+        if Paster.noteMeansPasted(note) {
+            scheduleCorrectionCheck(target: locked, inserted: transcript, contextTail: String(lockedContextBefore.suffix(40)))
+        }
+    }
+
+    /// 자동으로 넣고 10초 뒤 그 칸을 한 번 읽어, 사용자가 고친 단어를 후보로 저장한다(설정에서 켠 경우만).
+    private func scheduleCorrectionCheck(target: LockedTarget, inserted: String, contextTail: String) {
+        guard personalization.correctionLearningEnabled, !inserted.isEmpty, let el = target.element else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + CorrectionLearning.checkDelay) { [weak self] in
+            guard let self, self.personalization.correctionLearningEnabled else { return }
+            guard (TargetLock.axInt(el, kAXNumberOfCharactersAttribute as String) ?? 0) <= 50_000 else { return }
+            let value = TargetLock.axString(el, kAXValueAttribute as String)
+            guard !value.isEmpty, !value.contains(inserted) else { return }
+            guard let region = CorrectionLearning.editedRegion(in: value, contextTail: contextTail, insertedCount: inserted.count) else { return }
+            let pairs = CorrectionLearning.pairs(inserted: inserted, edited: region.text, editedTruncated: region.truncated)
+            guard !pairs.isEmpty else { return }
+            let notice = self.settingsNotice
+            self.updatePersonalization { $0.rememberCorrections(pairs, appName: target.appName) }
+            self.settingsNotice = notice
+            malgyeolLog("correction candidates +\(pairs.count) app=\(target.appName)")
+        }
+    }
+
+    func setCorrectionLearningEnabled(_ enabled: Bool) {
+        updatePersonalization {
+            $0.correctionLearningEnabled = enabled
+            if !enabled { $0.corrections.removeAll() }
+        }
+    }
+
+    func deleteCorrections(_ id: UUID? = nil) {
+        updatePersonalization {
+            if let id { $0.corrections.removeAll { $0.id == id } }
+            else { $0.corrections.removeAll() }
+        }
+    }
+
+    /// 후보를 개인 사전에 올린다. 등록되면 후보에서 뺀다.
+    func promoteCorrection(_ id: UUID) {
+        guard let candidate = personalization.corrections.first(where: { $0.id == id }) else { return }
+        updatePersonalization {
+            try $0.addVocabulary(heard: candidate.heard, spelling: candidate.spelling)
+            $0.corrections.removeAll { $0.id == id }
+        }
     }
 
     /// 마지막으로 넣으려던 칸에 지금 결과를 다시 넣는다(자동 넣기가 거부됐거나 글을 지웠을 때).

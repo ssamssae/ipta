@@ -73,6 +73,11 @@ final class Paster {
 
     static let keptNote = "결과를 보관했습니다. 복사를 누르세요."
 
+    /// pasteLocked 의 안내 문구가 「실제로 넣었다」는 뜻인지(원래 칸 또는 같은 앱 폴백).
+    nonisolated static func noteMeansPasted(_ note: String) -> Bool {
+        note.contains("붙여넣기 (")
+    }
+
     // MARK: - ⌘V 키 위치(자판별)
 
     private nonisolated(unsafe) static var cachedVKey: (layoutID: String, code: CGKeyCode)?
