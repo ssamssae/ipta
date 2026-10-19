@@ -21,7 +21,8 @@ field() {
   sed -n "s/.*$1=\\([0-9]*\\).*/\\1/p" <<<"$2"
 }
 test_files() {
-  find "$DOC_DIR" -maxdepth 1 -name 'r4-malgyeol-r4-*.txt' 2>/dev/null | awk 'END{print NR+0}'
+  [[ -d "$DOC_DIR" ]] || { echo 0; return; }
+  find "$DOC_DIR" -maxdepth 1 -name 'r4-malgyeol-r4-*.txt' | awk 'END{print NR+0}'
 }
 
 before="$(observe)"
