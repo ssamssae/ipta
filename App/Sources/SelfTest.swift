@@ -444,6 +444,7 @@ enum SelfTest {
         if let cleanup = real.cleanup {
             check("real textedit test document closed", cleanup.closed, cleanup.detail)
             check("real textedit test file removed", cleanup.fileRemoved, cleanup.detail)
+            check("real textedit front app given back", cleanup.frontGivenBack, cleanup.detail)
         }
 
         print("selftest failed=\(failed) blocked=\(blocked)")
@@ -457,7 +458,7 @@ enum SelfTest {
         /// nil when no test document was created.
         var cleanup: TestDocumentCleanup? = nil
     }
-    struct TestDocumentCleanup { let closed: Bool; let fileRemoved: Bool; let detail: String }
+    struct TestDocumentCleanup { let closed: Bool; let fileRemoved: Bool; let frontGivenBack: Bool; let detail: String }
 
     private static let textEditBundleId = "com.apple.TextEdit"
 
@@ -481,9 +482,10 @@ enum SelfTest {
         let file = dir.appendingPathComponent("r4-\(token).txt")
         try? "R4DOC\n".write(to: file, atomically: true, encoding: .utf8)
         let textEditWasRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: textEditBundleId).isEmpty
+        let previousFront = NSWorkspace.shared.frontmostApplication
 
         var result = pasteIntoTestDocument(paster: paster, textEdit: te, file: file, token: token)
-        result.cleanup = closeTestDocument(file: file, quitTextEdit: !textEditWasRunning)
+        result.cleanup = closeTestDocument(file: file, quitTextEdit: !textEditWasRunning, previousFront: previousFront)
         return result
     }
 
@@ -534,9 +536,9 @@ enum SelfTest {
     }
 
     /// 시험이 띄운 TextEdit 은 정상 종료하고(시험 문서도 함께 닫힘), 이미 떠 있던 TextEdit 이면 시험 문서 창만 닫는다.
-    /// 닫힌 것을 확인한 뒤에만 임시 파일을 지운다. 화면이 잠겨도 되고, AppleScript 를 쓰지 않는다
+    /// 닫힌 것을 확인한 뒤에만 임시 파일을 지우고, 시험 전 앞 앱을 돌려준다. AppleScript 를 쓰지 않는다
     /// (자동화 허용이 없는 볼칸 ssh 에서 허용 질문 창·2분 대기(-1712)를 만들지 않게).
-    private static func closeTestDocument(file: URL, quitTextEdit: Bool) -> TestDocumentCleanup {
+    private static func closeTestDocument(file: URL, quitTextEdit: Bool, previousFront: NSRunningApplication?) -> TestDocumentCleanup {
         let closed: Bool
         let how: String
         if quitTextEdit {
@@ -556,11 +558,22 @@ enum SelfTest {
             }
         }
         let fileRemoved = !FileManager.default.fileExists(atPath: file.path)
+        let frontGivenBack = giveFrontBack(to: previousFront)
         return TestDocumentCleanup(
             closed: closed,
             fileRemoved: fileRemoved,
-            detail: "doc=\(file.lastPathComponent) \(how) closed=\(closed) fileRemoved=\(fileRemoved)"
+            frontGivenBack: frontGivenBack,
+            detail: "doc=\(file.lastPathComponent) \(how) closed=\(closed) fileRemoved=\(fileRemoved) front=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?")"
         )
+    }
+
+    /// 시험 전 앞 앱(사용자가 쓰던 창)을 다시 앞으로 돌린다. 원래 TextEdit 을 쓰고 있었거나 그 앱이 꺼졌으면 그대로 둔다.
+    private static func giveFrontBack(to previous: NSRunningApplication?) -> Bool {
+        guard let previous, !previous.isTerminated, previous.bundleIdentifier != textEditBundleId else { return true }
+        func isFront() -> Bool { NSWorkspace.shared.frontmostApplication?.processIdentifier == previous.processIdentifier }
+        if isFront() { return true }
+        _ = previous.activate()
+        return waitUntil(seconds: 1) { isFront() }
     }
 
     /// 이미 떠 있던 TextEdit 에서 시험 문서 창을 AX 닫기 단추로 닫고, 사라졌는지 다시 읽어 확인한다.

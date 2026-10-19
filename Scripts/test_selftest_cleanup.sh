@@ -32,10 +32,15 @@ screen_locked() {
 clip_sha() {
   pbpaste 2>/dev/null | shasum -a 256 | cut -c1-16
 }
+# 앞 앱(실행 중인 앱마다 고유한 ASN).
+front_app() {
+  lsappinfo front 2>/dev/null
+}
 
 before="$(observe)"
 files_before="$(test_files)"
 clip_before="$(clip_sha)"
+front_before="$(front_app)"
 locked=no
 if screen_locked; then locked=yes; fi
 OUT="$(mktemp)"
@@ -64,6 +69,10 @@ check() {
 }
 # 합성 시험이 클립보드를 덮어써도 끝나면 사용자 것으로 돌아와야 한다.
 check "clipboard text restored" "$([[ "$(clip_sha)" == "$clip_before" ]] && echo ok || echo no)"
+# 시험이 TextEdit 을 앞으로 띄워도 끝나면 쓰던 앱이 다시 앞이어야 한다.
+front_after="$(front_app)"
+check "frontmost app given back (before: $front_before / after: $front_after)" \
+  "$([[ "$front_after" == "$front_before" ]] && echo ok || echo no)"
 # 잠긴 화면에서는 TextEdit 이 앞으로 못 나와 붙여넣기를 못 한다 — 띄우지도 말아야 한다.
 if [[ $locked == yes ]]; then
   check "TextEdit not launched while the screen is locked" "$([[ $launched == no ]] && echo ok || echo no)"
