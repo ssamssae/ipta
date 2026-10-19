@@ -34,6 +34,12 @@ enum SelfTest {
         // --- synthetic: clipboard guard (real pasteboard, no paste) ---
         let paster = Paster()
         let pb = NSPasteboard.general
+        // 아래 합성 시험이 클립보드를 덮어쓴다 — 끝나면(건너뛰기 포함) 사용자 것으로 되돌린다(T-261017-030).
+        let userClipboard = paster.snapshotPasteboard()
+        defer {
+            pb.clearContents()
+            if !userClipboard.items.isEmpty { pb.writeObjects(userClipboard.items) }
+        }
         pb.clearContents()
         pb.setString("USER-COPY", forType: .string)
         let write = paster.writeTemporary("OURS")
@@ -435,33 +441,65 @@ enum SelfTest {
             blocked += 1
             print("BLOCKED real textedit \(real.detail)")
         }
+        if let cleanup = real.cleanup {
+            check("real textedit test document closed", cleanup.closed, cleanup.detail)
+            check("real textedit test file removed", cleanup.fileRemoved, cleanup.detail)
+            check("real textedit front app given back", cleanup.frontGivenBack, cleanup.detail)
+        }
 
         print("selftest failed=\(failed) blocked=\(blocked)")
         return failed == 0 ? 0 : 1
     }
 
     enum RealStatus { case pass, fail, blocked }
-    struct RealResult { let status: RealStatus; let detail: String }
+    struct RealResult {
+        let status: RealStatus
+        let detail: String
+        /// nil when no test document was created.
+        var cleanup: TestDocumentCleanup? = nil
+    }
+    struct TestDocumentCleanup { let closed: Bool; let fileRemoved: Bool; let frontGivenBack: Bool; let detail: String }
+
+    private static let textEditBundleId = "com.apple.TextEdit"
 
     /// Opens a NEW dedicated TextEdit document, locks the focused element, pastes,
-    /// then reads the document body back via TextEdit's scripting interface.
+    /// then reads the locked text area back through AX (no AppleScript).
     /// PASS only if the body contains the token. Never targets any other app.
+    /// The test document is closed and its file removed on every path (T-261017-030).
     private static func textEditRealPaste(paster: Paster) -> RealResult {
         guard Paster.isTrusted() else {
             return RealResult(status: .blocked, detail: "accessibility not granted to this process; real paste not attempted")
         }
+        if screenIsLocked() {
+            return RealResult(status: .blocked, detail: "screen is locked, TextEdit cannot come to the front; real paste not attempted")
+        }
+        guard let te = NSWorkspace.shared.urlForApplication(withBundleIdentifier: textEditBundleId) else {
+            return RealResult(status: .blocked, detail: "TextEdit not found")
+        }
         let token = "malgyeol-r4-\(Int(Date().timeIntervalSince1970))"
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("malgyeol-r4-textedit", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let name = "r4-\(token).txt"
-        let file = dir.appendingPathComponent(name)
+        let file = dir.appendingPathComponent("r4-\(token).txt")
         try? "R4DOC\n".write(to: file, atomically: true, encoding: .utf8)
+        let textEditWasRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: textEditBundleId).isEmpty
+        let previousFront = NSWorkspace.shared.frontmostApplication
 
+        var result = pasteIntoTestDocument(paster: paster, textEdit: te, file: file, token: token)
+        result.cleanup = closeTestDocument(file: file, quitTextEdit: !textEditWasRunning, previousFront: previousFront)
+        return result
+    }
+
+    /// 잠긴 화면(또는 로그인 창)에서는 TextEdit 이 앞으로 못 나와 붙여넣기를 못 한다 — 그때는 TextEdit 을 띄우지도 않는다.
+    private static func screenIsLocked() -> Bool {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return session?["CGSSessionScreenIsLocked"] as? Bool == true
+            || NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.loginwindow"
+    }
+
+    private static func pasteIntoTestDocument(paster: Paster, textEdit te: URL, file: URL, token: String) -> RealResult {
+        let name = file.lastPathComponent
         final class Box { var opened = false }
         let box = Box()
-        guard let te = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") else {
-            return RealResult(status: .blocked, detail: "TextEdit not found")
-        }
         let conf = NSWorkspace.OpenConfiguration()
         conf.activates = true
         let sem = DispatchSemaphore(value: 0)
@@ -473,7 +511,7 @@ enum SelfTest {
         RunLoop.current.run(until: Date().addingTimeInterval(2.0))
 
         let front = NSWorkspace.shared.frontmostApplication
-        if front?.bundleIdentifier != "com.apple.TextEdit" {
+        if front?.bundleIdentifier != textEditBundleId {
             return RealResult(status: .blocked, detail: "TextEdit not frontmost (front=\(front?.localizedName ?? "?")); refusing to paste anywhere else")
         }
         let locked = TargetLock.capture()
@@ -490,26 +528,81 @@ enum SelfTest {
 
         let note = paster.pasteLocked(token, expected: locked)
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
-        let body = textEditBody(documentName: name)
+        // AppleScript 대신 AX 로 읽는다 — 자동화 허용이 없는 곳(볼칸 ssh -1744)에서 허용 질문 창·2분 대기가 없다.
+        let body = locked.element.map { element in TargetLock.axString(element, kAXValueAttribute as String) } ?? ""
         let ok = body.contains(token)
         let detail = "doc=\(name) lock=\(locked.summary) paste=\(note) bodyHasToken=\(ok) bodyLen=\(body.count)"
         return RealResult(status: ok ? .pass : .fail, detail: detail)
     }
 
-    private static func textEditBody(documentName: String) -> String {
-        let script = "tell application \"TextEdit\" to get text of document \"\(documentName)\""
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", script]
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = Pipe()
-        do {
-            try p.run()
-            p.waitUntilExit()
-        } catch {
-            return ""
+    /// 시험이 띄운 TextEdit 은 정상 종료하고(시험 문서도 함께 닫힘), 이미 떠 있던 TextEdit 이면 시험 문서 창만 닫는다.
+    /// 닫힌 것을 확인한 뒤에만 임시 파일을 지우고, 시험 전 앞 앱을 돌려준다. AppleScript 를 쓰지 않는다
+    /// (자동화 허용이 없는 볼칸 ssh 에서 허용 질문 창·2분 대기(-1712)를 만들지 않게).
+    private static func closeTestDocument(file: URL, quitTextEdit: Bool, previousFront: NSRunningApplication?) -> TestDocumentCleanup {
+        let closed: Bool
+        let how: String
+        if quitTextEdit {
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: textEditBundleId)
+            apps.forEach { _ = $0.terminate() }
+            closed = waitUntil(seconds: 5) { apps.allSatisfy(\.isTerminated) }
+            how = "quit the TextEdit the test launched"
+        } else {
+            closed = closeTestWindow(file: file)
+            how = "closed the test window in the TextEdit that was already running"
         }
-        return String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if closed {
+            try? FileManager.default.removeItem(at: file)
+            let dir = file.deletingLastPathComponent()
+            if (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty == true {
+                try? FileManager.default.removeItem(at: dir)
+            }
+        }
+        let fileRemoved = !FileManager.default.fileExists(atPath: file.path)
+        let frontGivenBack = giveFrontBack(to: previousFront)
+        return TestDocumentCleanup(
+            closed: closed,
+            fileRemoved: fileRemoved,
+            frontGivenBack: frontGivenBack,
+            detail: "doc=\(file.lastPathComponent) \(how) closed=\(closed) fileRemoved=\(fileRemoved) front=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?")"
+        )
+    }
+
+    /// 시험 전 앞 앱(사용자가 쓰던 창)을 다시 앞으로 돌린다. 원래 TextEdit 을 쓰고 있었거나 그 앱이 꺼졌으면 그대로 둔다.
+    private static func giveFrontBack(to previous: NSRunningApplication?) -> Bool {
+        guard let previous, !previous.isTerminated, previous.bundleIdentifier != textEditBundleId else { return true }
+        func isFront() -> Bool { NSWorkspace.shared.frontmostApplication?.processIdentifier == previous.processIdentifier }
+        if isFront() { return true }
+        _ = previous.activate()
+        return waitUntil(seconds: 1) { isFront() }
+    }
+
+    /// 이미 떠 있던 TextEdit 에서 시험 문서 창을 AX 닫기 단추로 닫고, 사라졌는지 다시 읽어 확인한다.
+    /// 창을 못 찾으면(화면 잠김 등) 닫았다고 단정하지 않는다.
+    private static func closeTestWindow(file: URL) -> Bool {
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: textEditBundleId).first else { return true }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        let base = file.deletingPathExtension().lastPathComponent
+        let path = file.resolvingSymlinksInPath().path
+        func testWindow() -> AXUIElement? {
+            var list: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &list) == .success,
+                  let wins = list as? [AXUIElement] else { return nil }
+            return wins.first { win in
+                URL(string: TargetLock.axString(win, kAXDocumentAttribute as String))?.resolvingSymlinksInPath().path == path
+                    || TargetLock.axString(win, kAXTitleAttribute as String).hasPrefix(base)
+            }
+        }
+        guard let win = testWindow(), let button = TargetLock.copyAX(win, kAXCloseButtonAttribute as String) else { return false }
+        AXUIElementPerformAction(button, kAXPressAction as CFString)
+        return waitUntil(seconds: 2) { testWindow() == nil }
+    }
+
+    private static func waitUntil(seconds: TimeInterval, _ done: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !done() {
+            if Date() >= deadline { return false }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return true
     }
 }
