@@ -463,6 +463,9 @@ enum SelfTest {
         guard Paster.isTrusted() else {
             return RealResult(status: .blocked, detail: "accessibility not granted to this process; real paste not attempted")
         }
+        if screenIsLocked() {
+            return RealResult(status: .blocked, detail: "screen is locked, TextEdit cannot come to the front; real paste not attempted")
+        }
         guard let te = NSWorkspace.shared.urlForApplication(withBundleIdentifier: textEditBundleId) else {
             return RealResult(status: .blocked, detail: "TextEdit not found")
         }
@@ -476,6 +479,13 @@ enum SelfTest {
         var result = pasteIntoTestDocument(paster: paster, textEdit: te, file: file, token: token)
         result.cleanup = closeTestDocument(file: file, quitTextEdit: !textEditWasRunning)
         return result
+    }
+
+    /// 잠긴 화면(또는 로그인 창)에서는 TextEdit 이 앞으로 못 나와 붙여넣기를 못 한다 — 그때는 TextEdit 을 띄우지도 않는다.
+    private static func screenIsLocked() -> Bool {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return session?["CGSSessionScreenIsLocked"] as? Bool == true
+            || NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.loginwindow"
     }
 
     private static func pasteIntoTestDocument(paster: Paster, textEdit te: URL, file: URL, token: String) -> RealResult {
