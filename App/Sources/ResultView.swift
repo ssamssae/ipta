@@ -221,8 +221,8 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("목록 새로고침") { state.refreshPermissions() }
-                        .controlSize(.small)
+                    AppKitActionButton(title: "목록 새로고침", identifier: "malgyeol-mic-refresh", action: { state.refreshPermissions() })
+                        .frame(width: 120, height: 24)
                 }
                 Text("마이크를 직접 고르면 녹음할 때 맥 기본 마이크도 그 장치로 바뀝니다. 언제든 여기서 다시 바꿀 수 있습니다.")
                     .font(.caption)
