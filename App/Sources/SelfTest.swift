@@ -462,7 +462,7 @@ enum SelfTest {
     private static let textEditBundleId = "com.apple.TextEdit"
 
     /// Opens a NEW dedicated TextEdit document, locks the focused element, pastes,
-    /// then reads the document body back via TextEdit's scripting interface.
+    /// then reads the locked text area back through AX (no AppleScript).
     /// PASS only if the body contains the token. Never targets any other app.
     /// The test document is closed and its file removed on every path (T-261017-030).
     private static func textEditRealPaste(paster: Paster) -> RealResult {
@@ -526,7 +526,8 @@ enum SelfTest {
 
         let note = paster.pasteLocked(token, expected: locked)
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
-        let body = textEditBody(documentName: name)
+        // AppleScript 대신 AX 로 읽는다 — 자동화 허용이 없는 곳(볼칸 ssh -1744)에서 허용 질문 창·2분 대기가 없다.
+        let body = locked.element.map { element in TargetLock.axString(element, kAXValueAttribute as String) } ?? ""
         let ok = body.contains(token)
         let detail = "doc=\(name) lock=\(locked.summary) paste=\(note) bodyHasToken=\(ok) bodyLen=\(body.count)"
         return RealResult(status: ok ? .pass : .fail, detail: detail)
@@ -599,20 +600,4 @@ enum SelfTest {
         return true
     }
 
-    private static func textEditBody(documentName: String) -> String {
-        let script = "tell application \"TextEdit\" to get text of document \"\(documentName)\""
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", script]
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = Pipe()
-        do {
-            try p.run()
-            p.waitUntilExit()
-        } catch {
-            return ""
-        }
-        return String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    }
 }
