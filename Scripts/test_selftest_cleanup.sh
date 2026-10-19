@@ -28,9 +28,14 @@ test_files() {
 screen_locked() {
   ioreg -n Root -d1 -a 2>/dev/null | grep -A1 CGSSessionScreenIsLocked | grep -q true
 }
+# 클립보드는 읽기만 한다(내용 대신 해시).
+clip_sha() {
+  pbpaste 2>/dev/null | shasum -a 256 | cut -c1-16
+}
 
 before="$(observe)"
 files_before="$(test_files)"
+clip_before="$(clip_sha)"
 locked=no
 if screen_locked; then locked=yes; fi
 OUT="$(mktemp)"
@@ -57,6 +62,8 @@ check() {
     failed=$((failed + 1))
   fi
 }
+# 합성 시험이 클립보드를 덮어써도 끝나면 사용자 것으로 돌아와야 한다.
+check "clipboard text restored" "$([[ "$(clip_sha)" == "$clip_before" ]] && echo ok || echo no)"
 # 잠긴 화면에서는 TextEdit 이 앞으로 못 나와 붙여넣기를 못 한다 — 띄우지도 말아야 한다.
 if [[ $locked == yes ]]; then
   check "TextEdit not launched while the screen is locked" "$([[ $launched == no ]] && echo ok || echo no)"

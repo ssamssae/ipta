@@ -34,6 +34,12 @@ enum SelfTest {
         // --- synthetic: clipboard guard (real pasteboard, no paste) ---
         let paster = Paster()
         let pb = NSPasteboard.general
+        // 아래 합성 시험이 클립보드를 덮어쓴다 — 끝나면(건너뛰기 포함) 사용자 것으로 되돌린다(T-261017-030).
+        let userClipboard = paster.snapshotPasteboard()
+        defer {
+            pb.clearContents()
+            if !userClipboard.items.isEmpty { pb.writeObjects(userClipboard.items) }
+        }
         pb.clearContents()
         pb.setString("USER-COPY", forType: .string)
         let write = paster.writeTemporary("OURS")
