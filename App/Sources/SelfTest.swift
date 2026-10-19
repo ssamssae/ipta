@@ -435,33 +435,53 @@ enum SelfTest {
             blocked += 1
             print("BLOCKED real textedit \(real.detail)")
         }
+        if let cleanup = real.cleanup {
+            check("real textedit test document closed", cleanup.closed, cleanup.detail)
+            check("real textedit test file removed", cleanup.fileRemoved, cleanup.detail)
+        }
 
         print("selftest failed=\(failed) blocked=\(blocked)")
         return failed == 0 ? 0 : 1
     }
 
     enum RealStatus { case pass, fail, blocked }
-    struct RealResult { let status: RealStatus; let detail: String }
+    struct RealResult {
+        let status: RealStatus
+        let detail: String
+        /// nil when no test document was created.
+        var cleanup: TestDocumentCleanup? = nil
+    }
+    struct TestDocumentCleanup { let closed: Bool; let fileRemoved: Bool; let detail: String }
+
+    private static let textEditBundleId = "com.apple.TextEdit"
 
     /// Opens a NEW dedicated TextEdit document, locks the focused element, pastes,
     /// then reads the document body back via TextEdit's scripting interface.
     /// PASS only if the body contains the token. Never targets any other app.
+    /// The test document is closed and its file removed on every path (T-261017-030).
     private static func textEditRealPaste(paster: Paster) -> RealResult {
         guard Paster.isTrusted() else {
             return RealResult(status: .blocked, detail: "accessibility not granted to this process; real paste not attempted")
         }
+        guard let te = NSWorkspace.shared.urlForApplication(withBundleIdentifier: textEditBundleId) else {
+            return RealResult(status: .blocked, detail: "TextEdit not found")
+        }
         let token = "malgyeol-r4-\(Int(Date().timeIntervalSince1970))"
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("malgyeol-r4-textedit", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let name = "r4-\(token).txt"
-        let file = dir.appendingPathComponent(name)
+        let file = dir.appendingPathComponent("r4-\(token).txt")
         try? "R4DOC\n".write(to: file, atomically: true, encoding: .utf8)
+        let textEditWasRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: textEditBundleId).isEmpty
 
+        var result = pasteIntoTestDocument(paster: paster, textEdit: te, file: file, token: token)
+        result.cleanup = closeTestDocument(file: file, quitTextEdit: !textEditWasRunning)
+        return result
+    }
+
+    private static func pasteIntoTestDocument(paster: Paster, textEdit te: URL, file: URL, token: String) -> RealResult {
+        let name = file.lastPathComponent
         final class Box { var opened = false }
         let box = Box()
-        guard let te = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") else {
-            return RealResult(status: .blocked, detail: "TextEdit not found")
-        }
         let conf = NSWorkspace.OpenConfiguration()
         conf.activates = true
         let sem = DispatchSemaphore(value: 0)
@@ -494,6 +514,73 @@ enum SelfTest {
         let ok = body.contains(token)
         let detail = "doc=\(name) lock=\(locked.summary) paste=\(note) bodyHasToken=\(ok) bodyLen=\(body.count)"
         return RealResult(status: ok ? .pass : .fail, detail: detail)
+    }
+
+    /// 시험이 띄운 TextEdit 은 정상 종료하고(시험 문서도 함께 닫힘), 이미 떠 있던 TextEdit 이면 시험 문서 창만 닫는다.
+    /// 닫힌 것을 확인한 뒤에만 임시 파일을 지운다. 화면이 잠겨도 되고, AppleScript 를 쓰지 않는다
+    /// (자동화 허용이 없는 볼칸 ssh 에서 허용 질문 창·2분 대기(-1712)를 만들지 않게).
+    private static func closeTestDocument(file: URL, quitTextEdit: Bool) -> TestDocumentCleanup {
+        let closed: Bool
+        let how: String
+        if quitTextEdit {
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: textEditBundleId)
+            apps.forEach { _ = $0.terminate() }
+            closed = waitUntil(seconds: 5) { apps.allSatisfy(\.isTerminated) }
+            how = "quit the TextEdit the test launched"
+        } else {
+            closed = closeTestWindow(file: file)
+            how = "closed the test window in the TextEdit that was already running"
+        }
+        if closed {
+            try? FileManager.default.removeItem(at: file)
+            let dir = file.deletingLastPathComponent()
+            if (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty == true {
+                try? FileManager.default.removeItem(at: dir)
+            }
+        }
+        let fileRemoved = !FileManager.default.fileExists(atPath: file.path)
+        return TestDocumentCleanup(
+            closed: closed,
+            fileRemoved: fileRemoved,
+            detail: "doc=\(file.lastPathComponent) \(how) closed=\(closed) fileRemoved=\(fileRemoved)"
+        )
+    }
+
+    /// 이미 떠 있던 TextEdit 에서 시험 문서 창을 AX 닫기 단추로 닫고, 사라졌는지 다시 읽어 확인한다.
+    /// 창을 못 찾으면(화면 잠김 등) 닫았다고 단정하지 않는다.
+    private static func closeTestWindow(file: URL) -> Bool {
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: textEditBundleId).first else { return true }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        let base = file.deletingPathExtension().lastPathComponent
+        let path = file.resolvingSymlinksInPath().path
+        func testWindow() -> AXUIElement? {
+            var list: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &list) == .success,
+                  let wins = list as? [AXUIElement] else { return nil }
+            return wins.first { win in
+                var doc: CFTypeRef?
+                var title: CFTypeRef?
+                AXUIElementCopyAttributeValue(win, kAXDocumentAttribute as CFString, &doc)
+                AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &title)
+                let docPath = (doc as? String).flatMap { URL(string: $0) }?.resolvingSymlinksInPath().path
+                return docPath == path || (title as? String)?.hasPrefix(base) == true
+            }
+        }
+        guard let win = testWindow() else { return false }
+        var button: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(win, kAXCloseButtonAttribute as CFString, &button) == .success,
+              let button, CFGetTypeID(button) == AXUIElementGetTypeID() else { return false }
+        AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
+        return waitUntil(seconds: 2) { testWindow() == nil }
+    }
+
+    private static func waitUntil(seconds: TimeInterval, _ done: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !done() {
+            if Date() >= deadline { return false }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return true
     }
 
     private static func textEditBody(documentName: String) -> String {
