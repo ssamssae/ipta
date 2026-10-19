@@ -106,7 +106,12 @@ enum SelfTest {
         check("synthetic pasteLocked refusal keeps clipboard", pb.string(forType: .string) == "KEEP-ME")
         check("synthetic refusal message is truthful (no '복사해 두었습니다')", !sheetNote.contains("복사해 두었습니다"), sheetNote)
         let selfNote = paster.pasteLocked("nope", expected: target(bundle: MalgyeolInfo.bundleId, app: MalgyeolInfo.productEn))
-        check("synthetic pasteLocked refuses Ipta", selfNote.contains("입타"), selfNote)
+        if IsSecureEventInputEnabled() {
+            // 잠긴 화면·암호 칸이 보안 입력을 켜 두면 암호 거절이 먼저 나온다(T-261019-014). 입타 창 거절 규칙은 위 「refuse Ipta self」가 본다.
+            print("SKIP synthetic pasteLocked refuses Ipta (secure input is on: \(selfNote))")
+        } else {
+            check("synthetic pasteLocked refuses Ipta", selfNote.contains("입타"), selfNote)
+        }
         let other = target(role: "AXGroup")
         let ghost = target(pid: 59521, bundle: "com.mitchellh.ghostty", app: "Ghostty", role: "AXGroup")
         check("synthetic same-app fallback allows Ghostty-like group", paster.sameAppFallback(ghost, ghost))
