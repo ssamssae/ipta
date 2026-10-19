@@ -511,7 +511,7 @@ enum SelfTest {
         RunLoop.current.run(until: Date().addingTimeInterval(2.0))
 
         let front = NSWorkspace.shared.frontmostApplication
-        if front?.bundleIdentifier != "com.apple.TextEdit" {
+        if front?.bundleIdentifier != textEditBundleId {
             return RealResult(status: .blocked, detail: "TextEdit not frontmost (front=\(front?.localizedName ?? "?")); refusing to paste anywhere else")
         }
         let locked = TargetLock.capture()
@@ -588,19 +588,12 @@ enum SelfTest {
             guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &list) == .success,
                   let wins = list as? [AXUIElement] else { return nil }
             return wins.first { win in
-                var doc: CFTypeRef?
-                var title: CFTypeRef?
-                AXUIElementCopyAttributeValue(win, kAXDocumentAttribute as CFString, &doc)
-                AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &title)
-                let docPath = (doc as? String).flatMap { URL(string: $0) }?.resolvingSymlinksInPath().path
-                return docPath == path || (title as? String)?.hasPrefix(base) == true
+                URL(string: TargetLock.axString(win, kAXDocumentAttribute as String))?.resolvingSymlinksInPath().path == path
+                    || TargetLock.axString(win, kAXTitleAttribute as String).hasPrefix(base)
             }
         }
-        guard let win = testWindow() else { return false }
-        var button: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(win, kAXCloseButtonAttribute as CFString, &button) == .success,
-              let button, CFGetTypeID(button) == AXUIElementGetTypeID() else { return false }
-        AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
+        guard let win = testWindow(), let button = TargetLock.copyAX(win, kAXCloseButtonAttribute as String) else { return false }
+        AXUIElementPerformAction(button, kAXPressAction as CFString)
         return waitUntil(seconds: 2) { testWindow() == nil }
     }
 
@@ -612,5 +605,4 @@ enum SelfTest {
         }
         return true
     }
-
 }
